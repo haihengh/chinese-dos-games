@@ -1,0 +1,8 @@
+data/*.db
+data/*.db-wal
+data/*.db-shm
+jsdos_cache/
+uploads_temp/
+__pycache__/
+*.pyc
+.env

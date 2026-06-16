@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}个人中心 — 中文 DOS 游戏{% endblock %}
+
+{% block content %}
+<div class="profile-page">
+    <div class="profile-card">
+        <h1 class="profile-title">个人中心</h1>
+        <div class="profile-info" id="profile-info">
+            <p>加载中...</p>
+        </div>
+        <div class="profile-saves" id="profile-saves" style="display:none;">
+            <h2>我的游戏存档</h2>
+            <div id="saves-list"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const token = localStorage.getItem('dos_token');
+    if (!token) {
+        window.location.href = '/login';
+        return;
+    }
+
+    // Fetch user info
+    fetch('/api/auth/me', {
+        headers: { 'Authorization': 'Bearer ' + token }
+    })
+    .then(r => {
+        if (!r.ok) { localStorage.removeItem('dos_token'); window.location.href = '/login'; return; }
+        return r.json();
+    })
+    .then(user => {
+        if (!user) return;
+        document.getElementById('profile-info').innerHTML = `
+            <p><strong>用户名:</strong> ${escapeHtml(user.username)}</p>
+            <p><strong>注册时间:</strong> ${user.created_at || '未知'}</p>
+        `;
+    })
+    .catch(() => {
+        document.getElementById('profile-info').innerHTML = '<p>加载失败，请重新登录</p>';
+    });
+});
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}上传游戏 — 中文 DOS 游戏{% endblock %}
+
+{% block content %}
+<div class="upload-page">
+    <div class="upload-card">
+        <h1 class="upload-title">📤 上传 DOS 游戏</h1>
+        <p class="upload-subtitle">上传 ZIP 格式的 DOS 游戏文件，系统会自动识别主程序</p>
+
+        <div class="upload-zone" id="upload-zone">
+            <div class="upload-zone-content">
+                <span class="upload-icon">📦</span>
+                <p class="upload-text">拖拽 ZIP 文件到此处</p>
+                <p class="upload-hint">或点击选择文件（最大 200MB）</p>
+                <input type="file" id="file-input" accept=".zip" hidden>
+                <button class="btn btn-primary" id="btn-select-file">选择文件</button>
+            </div>
+        </div>
+
+        <div class="upload-status" id="upload-status" style="display:none;">
+            <div class="upload-file-info">
+                <span id="upload-filename"></span>
+                <span id="upload-filesize"></span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <p class="upload-message" id="upload-message"></p>
+            <div class="upload-error" id="upload-error" style="display:none;"></div>
+        </div>
+
+        <div class="upload-success" id="upload-success" style="display:none;">
+            <p class="success-icon">✅</p>
+            <p class="success-text">游戏上传成功！</p>
+            <a href="#" class="btn btn-primary" id="btn-play-uploaded">开始游戏</a>
+        </div>
+
+        <div class="upload-login-prompt" id="upload-login-prompt">
+            <p>⚠️ 请先 <a href="/login">登录</a> 后才能上传游戏</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+{% endblock %}

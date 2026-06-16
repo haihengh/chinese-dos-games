@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}游戏列表 — 中文 DOS 游戏{% endblock %}
+
+{% block content %}
+<div class="games-page">
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+        <div class="filter-types">
+            <a href="/games{% if search %}?search={{ search }}{% endif %}"
+               class="filter-type {% if not current_type %}active{% endif %}">全部</a>
+            {% for t in types %}
+            <a href="/games?type={{ t.type }}{% if search %}&search={{ search }}{% endif %}"
+               class="filter-type {% if current_type == t.type %}active{% endif %}">
+                {{ t.type }} ({{ t.count }})
+            </a>
+            {% endfor %}
+        </div>
+        <div class="filter-sorts">
+            <select class="sort-select" onchange="window.location.href=this.value">
+                <option value="/games?{% if current_type %}type={{ current_type }}&{% endif %}{% if search %}search={{ search }}&{% endif %}sort=name"
+                        {% if sort == 'name' %}selected{% endif %}>按名称排序</option>
+                <option value="/games?{% if current_type %}type={{ current_type }}&{% endif %}{% if search %}search={{ search }}&{% endif %}sort=newest"
+                        {% if sort == 'newest' %}selected{% endif %}>最新添加</option>
+                <option value="/games?{% if current_type %}type={{ current_type }}&{% endif %}{% if search %}search={{ search }}&{% endif %}sort=year"
+                        {% if sort == 'year' %}selected{% endif %}>发行年份</option>
+                <option value="/games?{% if current_type %}type={{ current_type }}&{% endif %}{% if search %}search={{ search }}&{% endif %}sort=size"
+                        {% if sort == 'size' %}selected{% endif %}>文件大小</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Results Info -->
+    <div class="results-info">
+        {% if search %}
+        <p>搜索 "<strong>{{ search }}</strong>" — 找到 {{ total }} 款游戏</p>
+        {% endif %}
+        {% if current_type %}
+        <p>类型: <strong>{{ current_type }}</strong> — {{ total }} 款游戏</p>
+        {% endif %}
+    </div>
+
+    <!-- Game Grid -->
+    <div class="game-grid">
+        {% for game in games %}
+        <a href="/games/{{ game.identifier }}" class="game-card">
+            <div class="game-card-cover">
+                <img src="/api/games/{{ game.identifier }}/cover"
+                     alt="{{ game.name_zh }}"
+                     loading="lazy"
+                     onerror="this.style.opacity='0.3'">
+            </div>
+            <div class="game-card-info">
+                <h3 class="game-card-name">{{ game.name_zh }}</h3>
+                <div class="game-card-meta">
+                    {% if game.type %}
+                    <span class="type-badge type-{{ game.type.lower() }}">{{ game.type }}</span>
+                    {% endif %}
+                    {% if game.release_year %}
+                    <span class="year-badge">{{ game.release_year }}</span>
+                    {% endif %}
+                    {% if game.filesize %}
+                    <span class="size-badge">{{ (game.filesize / 1048576) | round(1) }} MB</span>
+                    {% endif %}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="/games?page={{ page - 1 }}{% if current_type %}&type={{ current_type }}{% endif %}{% if search %}&search={{ search }}{% endif %}{% if sort != 'name' %}&sort={{ sort }}{% endif %}"
+           class="page-link">← 上一页</a>
+        {% endif %}
+
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="page-link active">{{ p }}</span>
+            {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
+            <a href="/games?page={{ p }}{% if current_type %}&type={{ current_type }}{% endif %}{% if search %}&search={{ search }}{% endif %}{% if sort != 'name' %}&sort={{ sort }}{% endif %}"
+               class="page-link">{{ p }}</a>
+            {% elif p == 4 or p == total_pages - 3 %}
+            <span class="page-link dots">...</span>
+            {% endif %}
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <a href="/games?page={{ page + 1 }}{% if current_type %}&type={{ current_type }}{% endif %}{% if search %}&search={{ search }}{% endif %}{% if sort != 'name' %}&sort={{ sort }}{% endif %}"
+           class="page-link">下一页 →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Empty State -->
+    {% if not games %}
+    <div class="empty-state">
+        <p class="empty-icon">📭</p>
+        <h3>没有找到游戏</h3>
+        <p>尝试其他搜索词或筛选条件</p>
+        <a href="/games" class="btn btn-primary">查看全部游戏</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

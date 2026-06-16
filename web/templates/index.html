@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}中文 DOS 游戏 — 在浏览器中重温经典{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero">
+    <div class="hero-content">
+        <h1 class="hero-title">中文 DOS 游戏</h1>
+        <p class="hero-subtitle">在浏览器中重温 {{ total }} 款经典中文 DOS 游戏</p>
+        <form class="hero-search" action="/games" method="GET">
+            <input type="text" name="search" class="hero-search-input"
+                   placeholder="搜索游戏名称..." autocomplete="off">
+            <button type="submit" class="hero-search-btn">🔍 搜索</button>
+        </form>
+        <div class="hero-types">
+            {% for t in types[:8] %}
+            <a href="/games?type={{ t.type }}" class="hero-type-badge">{{ t.type }} <span class="count">{{ t.count }}</span></a>
+            {% endfor %}
+            <a href="/games" class="hero-type-badge">全部 <span class="count">{{ total }}</span></a>
+        </div>
+    </div>
+</section>
+
+<!-- Featured Games -->
+<section class="section">
+    <div class="section-header">
+        <h2 class="section-title">🎲 随机推荐</h2>
+        <a href="/games" class="section-link">浏览全部 →</a>
+    </div>
+    <div class="game-grid">
+        {% for game in games %}
+        <a href="/games/{{ game.identifier }}" class="game-card">
+            <div class="game-card-cover">
+                <img src="/api/games/{{ game.identifier }}/cover"
+                     alt="{{ game.name_zh }}"
+                     loading="lazy"
+                     onerror="this.src='{{ url_for('static', filename='img/no-cover.png') }}'">
+            </div>
+            <div class="game-card-info">
+                <h3 class="game-card-name">{{ game.name_zh }}</h3>
+                <div class="game-card-meta">
+                    {% if game.type %}
+                    <span class="type-badge type-{{ game.type.lower() }}">{{ game.type }}</span>
+                    {% endif %}
+                    {% if game.release_year %}
+                    <span class="year-badge">{{ game.release_year }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Stats Section -->
+<section class="section stats-section">
+    <h2 class="section-title">📊 游戏类型分布</h2>
+    <div class="stats-grid">
+        {% for t in types %}
+        <a href="/games?type={{ t.type }}" class="stat-card">
+            <span class="stat-type">{{ t.type }}</span>
+            <span class="stat-count">{{ t.count }}</span>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

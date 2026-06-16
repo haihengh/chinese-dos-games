@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}中文 DOS 游戏{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">🕹️ 中文 DOS 游戏</a>
+            <div class="nav-links">
+                <a href="/games" class="nav-link">游戏列表</a>
+                <a href="/upload" class="nav-link" id="nav-upload">上传游戏</a>
+            </div>
+            <div class="nav-actions">
+                <form class="nav-search" action="/games" method="GET">
+                    <input type="text" name="search" placeholder="搜索游戏..." class="nav-search-input"
+                           value="{{ search|default('') }}" autocomplete="off">
+                    <button type="submit" class="nav-search-btn">🔍</button>
+                </form>
+                <div class="nav-auth" id="nav-auth">
+                    <a href="/login" class="btn btn-sm">登录</a>
+                    <a href="/register" class="btn btn-primary btn-sm">注册</a>
+                </div>
+                <div class="nav-user" id="nav-user" style="display:none;">
+                    <span class="nav-username" id="nav-username"></span>
+                    <a href="/profile" class="btn btn-sm">个人中心</a>
+                    <button class="btn btn-sm" id="btn-logout">退出</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <p>中文 DOS 游戏合集 — 在浏览器中重温经典</p>
+            <p class="footer-small">
+                游戏文件来源于 <a href="https://github.com/rwv/chinese-dos-games" target="_blank">chinese-dos-games</a>
+                &nbsp;|&nbsp;
+                基于 <a href="https://js-dos.com/" target="_blank">js-dos</a> 驱动
+            </p>
+        </div>
+    </footer>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

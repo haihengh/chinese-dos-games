@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}{{ game.name_zh }} — 中文 DOS 游戏{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ config.JSDOS_CSS }}">
+{% endblock %}
+
+{% block content %}
+<div class="game-page">
+    <!-- Left: Game Player -->
+    <div class="game-player">
+        <div class="game-canvas-container" id="dos-container">
+            <div class="game-loading" id="game-loading">
+                <div class="loading-spinner"></div>
+                <p class="loading-text">正在加载游戏...</p>
+            </div>
+        </div>
+
+        <div class="game-controls">
+            <button class="control-btn" id="btn-fullscreen" title="全屏">🖥️ 全屏</button>
+            <button class="control-btn" id="btn-pause" title="暂停/继续">⏯️ 暂停</button>
+            <button class="control-btn" id="btn-restart" title="重新开始">🔄 重启</button>
+            <button class="control-btn" id="btn-volume-down" title="减小音量">🔉</button>
+            <button class="control-btn" id="btn-volume-up" title="增加音量">🔊</button>
+            <span style="flex:1"></span>
+            <button class="control-btn save-btn" id="btn-save" title="保存到云端">💾 保存进度</button>
+            <button class="control-btn save-btn" id="btn-load" title="从云端加载">📥 加载进度</button>
+            <span id="save-status" style="font-size:0.8rem;color:var(--text-muted)"></span>
+        </div>
+    </div>
+
+    <!-- Right: Game Info Sidebar -->
+    <div class="game-sidebar">
+        <!-- Game Info Card -->
+        <div class="sidebar-card">
+            <h3>🎮 游戏信息</h3>
+            <h2 class="sidebar-game-name">{{ game.name_zh }}</h2>
+            {% if game.name_en and game.name_en != game.name_zh %}
+            <p style="color:var(--text-muted);font-size:0.9rem;">{{ game.name_en }}</p>
+            {% endif %}
+            <div class="sidebar-meta">
+                {% if game.type %}
+                <span class="type-badge type-{{ game.type.lower() }}">{{ game.type }}</span>
+                {% endif %}
+                {% if game.release_year %}
+                <span class="sidebar-meta-item">📅 {{ game.release_year }}</span>
+                {% endif %}
+                {% if game.filesize %}
+                <span class="sidebar-meta-item">📦 {{ (game.filesize / 1048576) | round(1) }} MB</span>
+                {% endif %}
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-dim);">主程序: <code>{{ game.executable }}</code></p>
+        </div>
+
+        <!-- Keymaps Card -->
+        {% if game.keymaps %}
+        <div class="sidebar-card">
+            <h3>⌨️ 操作说明</h3>
+            <div class="sidebar-keymap">
+                {% for key, desc in game.keymaps.items() %}
+                <p><kbd>{{ key }}</kbd> — {{ desc }}</p>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Cheats Card -->
+        {% if game.cheats %}
+        <div class="sidebar-card">
+            <h3>🎯 秘籍</h3>
+            <div class="sidebar-cheat">
+                {% for code, effect in game.cheats.items() %}
+                <p><code>{{ code }}</code> — {{ effect }}</p>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Links Card -->
+        {% if game.links %}
+        <div class="sidebar-card">
+            <h3>🔗 相关链接</h3>
+            {% for title, url in game.links.items() %}
+            <a href="{{ url }}" target="_blank" rel="noopener" class="sidebar-link">{{ title }}</a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Save Info -->
+        <div class="sidebar-card" id="save-info-card" style="display:none;">
+            <h3>💾 存档信息</h3>
+            <p id="save-info-text" style="font-size:0.85rem;"></p>
+        </div>
+
+        <!-- Metadata Card -->
+        <div class="sidebar-card" id="metadata-card" style="display:none;">
+            <h3>📖 游戏介绍</h3>
+            <div id="metadata-content"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Game identifier for JS -->
+<script>
+    window.GAME_ID = "{{ game.identifier }}";
+    window.GAME_EXECUTABLE = "{{ game.executable }}";
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ config.JSDOS_JS }}"></script>
+<script src="{{ url_for('static', filename='js/game.js') }}"></script>
+{% endblock %}
