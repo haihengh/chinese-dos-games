@@ -2,13 +2,13 @@
  * Chinese DOS Games — js-dos v8 Game Player
  *
  * Uses js-dos v8 with DOSBox-X backend for Chinese character support.
- * Loads .jsdos bundles from the server, handles save/load, fullscreen, controls.
+ * v8 API: Dos(element, { url, backend, ... }) returns DosProps.
+ * No .run() method — the bundle URL is passed in options.
  */
 (function () {
     'use strict';
 
-    let dosInstance = null;
-    let ci = null;          // CommandInterface
+    let dosProps = null;    // DosProps from Dos()
     let isPaused = false;
     let isFullscreen = false;
     let volume = 1.0;
@@ -16,58 +16,95 @@
     const GAME_ID = window.GAME_ID;
     const BUNDLE_URL = `/api/games/${encodeURIComponent(GAME_ID)}/bundle`;
 
+    /** HTML for the loading overlay, reused on restart. */
+    const LOADING_HTML = `
+        <div class="loading-spinner"></div>
+        <p class="loading-text">正在加载游戏...</p>
+    `;
+
+    /**
+     * Create (or recreate) the js-dos v8 player inside #dos-container.
+     * Returns a promise that resolves when "ci-ready" fires.
+     */
+    function createDosPlayer() {
+        const container = document.getElementById('dos-container');
+        const saveStatus = document.getElementById('save-status');
+
+        // Clear container and re-add the loading overlay
+        container.innerHTML = '';
+        const loadingEl = document.createElement('div');
+        loadingEl.className = 'game-loading';
+        loadingEl.id = 'game-loading';
+        loadingEl.innerHTML = LOADING_HTML;
+        container.appendChild(loadingEl);
+
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('游戏加载超时，请检查网络连接'));
+            }, 120000); // 2-minute timeout for large bundles
+
+            try {
+                dosProps = Dos(container, {
+                    url: BUNDLE_URL,
+                    backend: 'dosboxX',
+                    volume: volume,
+                    autoStart: true,
+                    onEvent: (event, ci) => {
+                        if (event === 'ci-ready') {
+                            clearTimeout(timeout);
+                            const le = document.getElementById('game-loading');
+                            if (le) le.classList.add('hidden');
+                            saveStatus.textContent = '游戏已就绪';
+                            resolve(ci);
+                        } else if (event === 'fullscreen-changed') {
+                            // ci is the new fullscreen state (boolean)
+                            isFullscreen = !!ci;
+                            updateFullscreenButton();
+                        }
+                    },
+                });
+            } catch (err) {
+                clearTimeout(timeout);
+                reject(err);
+            }
+        });
+    }
+
+    // ─── Startup ───
+
     document.addEventListener('DOMContentLoaded', async () => {
         const container = document.getElementById('dos-container');
         const loadingEl = document.getElementById('game-loading');
-        const saveStatus = document.getElementById('save-status');
 
         if (!container || !GAME_ID) return;
 
         // Check for existing save
-        if (window.DOS.App.isLoggedIn()) {
+        if (typeof window.DOS !== 'undefined' && window.DOS.App && window.DOS.App.isLoggedIn()) {
             checkExistingSave();
         }
 
-        // Initialize js-dos
+        // Initialize js-dos v8
         try {
-            dosInstance = Dos(container, {
-                style: 'none',  // We use our own CSS
-                backend: 'dosboxX',  // DOSBox-X for Chinese support
-                onerror: (error) => {
-                    console.error('js-dos error:', error);
-                    loadingEl.innerHTML = `
-                        <p style="color:var(--danger);font-size:1rem;">❌ 模拟器错误</p>
-                        <p style="color:var(--text-muted);">${error}</p>
-                        <button class="btn btn-primary" onclick="location.reload()">重试</button>
-                    `;
-                },
-            });
-
-            // Load the game bundle
-            ci = await dosInstance.run(BUNDLE_URL);
-
-            // Hide loading
-            loadingEl.classList.add('hidden');
-            saveStatus.textContent = '游戏已就绪';
-
-            // Listen for exit
-            ci.events().onExit(() => {
-                saveStatus.textContent = '游戏已退出';
-            });
-
+            await createDosPlayer();
         } catch (err) {
             console.error('Failed to start game:', err);
-            loadingEl.innerHTML = `
-                <p style="color:var(--danger);font-size:1rem;">❌ 加载失败</p>
-                <p style="color:var(--text-muted);">${err.message || '未知错误'}</p>
-                <button class="btn btn-primary" onclick="location.reload()">重试</button>
-            `;
+            const le = document.getElementById('game-loading');
+            if (le) {
+                le.innerHTML = `
+                    <p style="color:var(--danger);font-size:1rem;">❌ 加载失败</p>
+                    <p style="color:var(--text-muted);">${err.message || '未知错误'}</p>
+                    <button class="btn btn-primary" onclick="location.reload()">重试</button>
+                `;
+                le.classList.remove('hidden');
+            }
         }
 
         // Setup controls
         setupControls();
         loadMetadata();
     });
+
+    // ─── Controls Setup ───
 
     function setupControls() {
         // Fullscreen
@@ -89,7 +126,7 @@
         // Load
         document.getElementById('btn-load').addEventListener('click', loadGame);
 
-        // Keyboard shortcut for fullscreen
+        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'F11' || (e.key === 'Enter' && e.altKey)) {
                 e.preventDefault();
@@ -102,75 +139,65 @@
             }
         });
 
-        // Handle fullscreen change (e.g., user presses Escape)
+        // If user exits fullscreen via Escape, sync state
         document.addEventListener('fullscreenchange', () => {
-            isFullscreen = !!document.fullscreenElement;
-            updateFullscreenButton();
+            if (!document.fullscreenElement) {
+                isFullscreen = false;
+                updateFullscreenButton();
+            }
         });
     }
 
     // ─── Fullscreen ───
 
     function toggleFullscreen() {
-        const container = document.getElementById('dos-container');
-        if (!isFullscreen) {
-            if (container.requestFullscreen) {
-                container.requestFullscreen();
-            }
-            isFullscreen = true;
-        } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            }
-            isFullscreen = false;
-        }
+        if (!dosProps) return;
+        isFullscreen = !isFullscreen;
+        dosProps.setFullScreen(isFullscreen);
         updateFullscreenButton();
     }
 
     function updateFullscreenButton() {
         const btn = document.getElementById('btn-fullscreen');
-        btn.textContent = isFullscreen ? '🖥️ 退出全屏' : '🖥️ 全屏';
+        if (btn) {
+            btn.textContent = isFullscreen ? '🖥️ 退出全屏' : '🖥️ 全屏';
+        }
     }
 
     // ─── Pause ───
 
-    async function togglePause() {
-        if (!ci) return;
-        try {
-            if (isPaused) {
-                await ci.resume();
-                isPaused = false;
-                document.getElementById('btn-pause').textContent = '⏯️ 暂停';
-            } else {
-                await ci.pause();
-                isPaused = true;
-                document.getElementById('btn-pause').textContent = '▶️ 继续';
-            }
-        } catch (e) {
-            console.error('Pause/resume error:', e);
+    function togglePause() {
+        if (!dosProps) return;
+        if (isPaused) {
+            dosProps.setPaused(false);
+            isPaused = false;
+            document.getElementById('btn-pause').textContent = '⏯️ 暂停';
+        } else {
+            dosProps.setPaused(true);
+            isPaused = true;
+            document.getElementById('btn-pause').textContent = '▶️ 继续';
         }
     }
 
     // ─── Restart ───
 
     async function restartGame() {
-        if (!ci) return;
+        if (!dosProps) return;
         if (!confirm('确定要重新开始游戏吗？未保存的进度会丢失。')) return;
 
+        document.getElementById('save-status').textContent = '重启中...';
+
         try {
-            await ci.exit();
+            await dosProps.stop();
+            dosProps = null;
         } catch (e) { /* ignore */ }
 
-        // Relaunch
-        const loadingEl = document.getElementById('game-loading');
-        loadingEl.classList.remove('hidden');
         try {
-            ci = await dosInstance.run(BUNDLE_URL);
-            loadingEl.classList.add('hidden');
+            await createDosPlayer();
             document.getElementById('save-status').textContent = '游戏已重启';
         } catch (e) {
             console.error('Restart failed:', e);
-            loadingEl.classList.add('hidden');
+            document.getElementById('save-status').textContent = '重启失败';
         }
     }
 
@@ -178,14 +205,8 @@
 
     function adjustVolume(delta) {
         volume = Math.max(0, Math.min(1, volume + delta));
-        // js-dos v8 volume adjustment
-        if (ci) {
-            try {
-                // The ci object may have volume control
-                if (typeof ci.setVolume === 'function') {
-                    ci.setVolume(volume);
-                }
-            } catch (e) { /* ignore */ }
+        if (dosProps) {
+            dosProps.setVolume(volume);
         }
     }
 
@@ -197,7 +218,7 @@
             return;
         }
 
-        if (!ci) {
+        if (!dosProps) {
             window.DOS.App.showToast('游戏尚未加载', 'error');
             return;
         }
@@ -206,46 +227,14 @@
         saveStatus.textContent = '保存中...';
 
         try {
-            // Use js-dos v8 layers API to get changes
-            // The save() method persists to IndexedDB, then we can extract
-            await ci.save();
-            await ci.persist();
-
-            // Take a screenshot as save thumbnail
-            let screenshot = null;
-            try {
-                screenshot = await ci.screenshot();
-            } catch (e) { /* ignore */ }
-
-            // For server-side save, we need to extract changed files
-            // js-dos v8 stores changes in IndexedDB; we use the persist API
-            // and then read the changes from the FS
-
-            // Attempt to read the save data from the virtual filesystem
-            // Common save file locations to check
-            const saveFiles = [];
-            const commonSaveDirs = ['SAVE', 'SAVES', 'SAVEDATA', 'DATA/SAVE'];
-
-            for (const dir of commonSaveDirs) {
-                try {
-                    const tree = await ci.fsTree();
-                    // Walk the tree for save-like files
-                    // For now, persist everything
-                } catch (e) { /* ignore */ }
+            const saved = await dosProps.save();
+            if (saved) {
+                window.DOS.App.showToast('游戏进度已保存到浏览器 (IndexedDB)', 'success');
+                saveStatus.textContent = '已保存 (浏览器)';
+            } else {
+                window.DOS.App.showToast('保存失败', 'error');
+                saveStatus.textContent = '保存失败';
             }
-
-            // Use the simpler approach: serialize the entire filesystem changes
-            // by using the js-dos persist mechanism which stores to IndexedDB
-            // Then we read the IndexedDB entry
-
-            // Alternative: create a save bundle manually
-            // For now, notify the user that saves work through browser storage
-            window.DOS.App.showToast('游戏进度已保存到浏览器 (IndexedDB)', 'success');
-            saveStatus.textContent = '已保存 (浏览器)';
-
-            // TODO: For cloud sync, use the js-dos cloud storage API
-            // or manually extract and upload changed files
-
         } catch (err) {
             console.error('Save error:', err);
             window.DOS.App.showToast('保存失败: ' + err.message, 'error');
@@ -261,7 +250,6 @@
 
         const saveStatus = document.getElementById('save-status');
 
-        // Check for IndexedDB save first (auto-loaded by js-dos on run())
         // Check for server-side save
         try {
             const resp = await window.DOS.App.apiFetch(
@@ -283,7 +271,6 @@
             }
 
             // TODO: Inject save files into the virtual filesystem
-            // This requires the game to be restarted with the save data
             window.DOS.App.showToast('云端存档已加载 (重启游戏后生效)', 'success');
             saveStatus.textContent = '云端存档已加载';
 
@@ -292,6 +279,8 @@
             window.DOS.App.showToast('加载存档失败', 'error');
         }
     }
+
+    // ─── Existing Save Check ───
 
     async function checkExistingSave() {
         try {
