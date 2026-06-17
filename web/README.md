@@ -182,42 +182,44 @@ web/
 
 ```
 用户访问 /games/<id>
-  → game.html 加载 js-dos CDN 脚本
-  → game.js 创建 Dos(canvas, { backend: "dosboxX" })
-  → 请求 GET /api/games/<id>/bundle
+  → game.html 加载 js-dos v8 CDN 脚本 (jsdelivr)
+  → game.js 调用 Dos(canvas, { url: BUNDLE_URL, backend: "dosboxX", autoStart: true })
+  → js-dos v8 内部请求 GET /api/games/<id>/bundle
 
-Bundle 端点:
-  → 检查 jsdos_cache/<id>.jsdos 是否存在且 SHA256 匹配
-  → 未命中: 读取原始 ZIP → 注入 .jsdos/dosbox.conf → 写入缓存
+Bundle 端点 (bundle_service.py):
+  → 检查 jsdos_cache/<id>.jsdos 是否存在且 SHA256 匹配 bin/<id>.zip
+  → 未命中: 读取原始 ZIP → 注入 .jsdos/dosbox.conf + 可选 TTF 字体 → 写入缓存
   → 命中: 从缓存直接返回
   → 返回 application/zip（作为 .jsdos bundle）
 
-js-dos 接收 bundle:
-  → 解压到虚拟文件系统
+js-dos v8 接收 bundle:
+  → 解压到虚拟文件系统 (Emscripten MEMFS)
   → 读取 .jsdos/dosbox.conf
-  → DOSBox-X 启动
-  → autoexec 运行游戏主程序
-  → 游戏在 <canvas> 上渲染
+  → 挂载 IDBFS 持久化层 (如果存在历史存档则自动恢复)
+  → DOSBox-X 启动 → autoexec 运行游戏主程序
+  → 游戏渲染在 <canvas> 上
+  → onEvent('ci-ready') 触发 → 隐藏加载遮罩 → 游戏可操作
 ```
 
 ```
 User visits /games/<id>
-  → game.html loads js-dos CDN scripts
-  → game.js creates Dos(canvas, { backend: "dosboxX" })
-  → Requests GET /api/games/<id>/bundle
+  → game.html loads js-dos v8 CDN scripts (jsdelivr)
+  → game.js calls Dos(canvas, { url: BUNDLE_URL, backend: "dosboxX", autoStart: true })
+  → js-dos v8 internally requests GET /api/games/<id>/bundle
 
-Bundle endpoint:
-  → Check jsdos_cache/<id>.jsdos exists & SHA256 matches source ZIP
-  → MISS: Read source ZIP → inject .jsdos/dosbox.conf → write to cache
+Bundle endpoint (bundle_service.py):
+  → Check jsdos_cache/<id>.jsdos exists & SHA256 matches bin/<id>.zip
+  → MISS: Read source ZIP → inject .jsdos/dosbox.conf + optional TTF font → write cache
   → HIT: Stream from cache
   → Returns application/zip (as .jsdos bundle)
 
-js-dos receives bundle:
-  → Unpacks to virtual filesystem
+js-dos v8 receives bundle:
+  → Unpacks to virtual filesystem (Emscripten MEMFS)
   → Reads .jsdos/dosbox.conf
-  → DOSBox-X boots
-  → autoexec launches game executable
+  → Mounts IDBFS persistence layer (auto-restores if prior save exists)
+  → DOSBox-X boots → autoexec launches game executable
   → Game renders on <canvas>
+  → onEvent('ci-ready') fires → hides loading overlay → game is playable
 ```
 
 ---
@@ -255,23 +257,78 @@ PLAY.BAT                        # 自动检测的可执行文件 · Auto-detecte
 
 ---
 
-## 存档流程 · Save/Load Flow
+## 存档架构 · Save Architecture
+
+存档数据经过 **四层存储**，从模拟器内存到云端数据库：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. DOSBox-X 虚拟文件系统 (Emscripten MEMFS)              │
+│    游戏运行时所有文件变更在内存中                           │
+│    ↓  dosProps.save()  — 触发 FS.syncfs(false)          │
+│                                                         │
+│ 2. 浏览器 IndexedDB (Emscripten IDBFS)                   │
+│    DB 名: /home/web_user, /, 或 /emscripten_idbfs       │
+│    Store: FILE_DATA                                     │
+│    每条记录: file_path → {timestamp, mode, contents}      │
+│    ★ 页面刷新后自动恢复（同浏览器同游戏）                   │
+│    ↓  exportSaveBundle() — 遍历所有 IDB 数据库，base64 编码 │
+│                                                         │
+│ 3. JSON Save Bundle (序列化格式)                         │
+│    { v:1, game:"<id>", ts:<unix_ms>,                    │
+│      dbs: { "<dbName>": { "<storeName>": [              │
+│        {key, value: {__b: "<base64>" | ...}} ] } } }    │
+│    ↓  POST /api/games/<id>/save                         │
+│                                                         │
+│ 4. 服务器 SQLite — web/data/games.db                    │
+│    Table: user_saves                                    │
+│    Columns: user_id, game_identifier, save_data (BLOB)   │
+│    UNIQUE(user_id, game_identifier) — 每用户每游戏一个存档  │
+└─────────────────────────────────────────────────────────┘
+```
 
 ### 保存 · Save
+
 ```
-用户在游戏中存档 → js-dos 写入虚拟文件系统
-  → 点击"保存进度" → ci.save() + ci.persist()
-  → 浏览器 IndexedDB 持久化
-  → 可选: POST /api/games/<id>/save → 服务器 SQLite BLOB
+用户点击"💾 保存进度"
+  → ① dosProps.save()     — MEMFS → IndexedDB (浏览器持久化)
+  → ② exportSaveBundle()  — 扫描所有 IDB 数据库，读取 FILE_DATA
+                             二进制值转 base64 ({__b: "..."})
+  → ③ POST /api/games/<id>/save
+        Body: {"save_data": "<整个 bundle 的 base64>"}
+        → Flask 解码 base64 → SQLite user_saves.save_data BLOB
+  → 状态: "已保存 (云端 + 浏览器)"
+  
+  降级: 如果 IndexedDB 导出失败，仍显示 "已保存 (仅浏览器)"
 ```
 
 ### 加载 · Load
+
 ```
-点击"加载进度" → GET /api/games/<id>/save
-  → 服务器返回存档 ZIP
-  → 注入虚拟文件系统
-  → 游戏以存档状态启动
+用户点击"📥 加载进度"
+  → ① GET /api/games/<id>/save  → 下载 BLOB
+  → ② blob.text() → JSON.parse → Save Bundle 对象
+  → ③ 显示保存时间，确认覆盖
+  → ④ dosProps.stop()           — 终止当前模拟器
+  → ⑤ importSaveBundle()        — 逐条写入 IDB (FILE_DATA store)
+  → ⑥ createDosPlayer()         — 重启 js-dos
+       → IDBFS 挂载 → 从 IndexedDB 恢复文件系统 → 游戏以存档状态运行
+  → 状态: "存档已恢复"
 ```
+
+### js-dos v8 API 对照 · API Mapping (v7 → v8)
+
+| 操作 | v7 (旧) | v8 (新) |
+|------|---------|---------|
+| 初始化 | `Dos(el, opts)` 同步 | `Dos(el, { url, ... })` 同步返回 DosProps |
+| 加载游戏 | `await dos.run(url)` | `url` 传入 Dos() 选项 — **无 run() 方法** |
+| 事件 | `ci.events().onExit(...)` | `onEvent` 回调: `ci-ready`, `fullscreen-changed` |
+| 暂停 | `await ci.pause()` | `dosProps.setPaused(true)` |
+| 恢复 | `await ci.resume()` | `dosProps.setPaused(false)` |
+| 终止 | `await ci.exit()` | `await dosProps.stop()` |
+| 保存 | `ci.save()` + `ci.persist()` | `await dosProps.save()` |
+| 全屏 | DOM requestFullscreen | `dosProps.setFullScreen(bool)` |
+| 音量 | `ci.setVolume(n)` | `dosProps.setVolume(n)` |
 
 ---
 
