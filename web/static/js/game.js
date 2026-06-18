@@ -354,6 +354,12 @@
         const container = document.getElementById('dos-container');
         if (!container || !GAME_ID) return;
 
+        // Always set up controls and metadata — even if the game
+        // isn't loaded yet (first-run UI).  Otherwise buttons
+        // inside #player-area have no handlers after first-run
+        // loads the game.
+        setupControls();
+        loadMetadata();
         updateStorageInfo();
         checkLocalSave();
 
@@ -374,7 +380,6 @@
                 saveBlobUrl = URL.createObjectURL(
                     new Blob([savedChanges], { type: 'application/octet-stream' })
                 );
-                // Keep track for cleanup
                 if (window.__dosSaveUrl) URL.revokeObjectURL(window.__dosSaveUrl);
                 window.__dosSaveUrl = saveBlobUrl;
                 console.log('[game.js] Restoring save state, size:', savedChanges.byteLength, 'bytes');
@@ -382,6 +387,7 @@
 
             await createDosPlayer(url, saveBlobUrl);
             hideFirstRunUI();
+            checkLocalSave();
         } catch (err) {
             console.error('[game.js] Startup failed:', err);
             const le = document.getElementById('game-loading');
@@ -392,9 +398,6 @@
                 le.classList.remove('hidden');
             }
         }
-
-        setupControls();
-        loadMetadata();
     });
 
     // ═══════════════════════════════════════════════════════════════
@@ -492,10 +495,22 @@
 
     async function checkLocalSave() {
         const el = document.getElementById('save-indicator');
+        const hint = document.getElementById('save-hint');
         if (!el) return;
-        const has = await hasLocalSave();
-        el.textContent = has ? '💾 有存档' : '📝 新游戏';
-        el.style.color = has ? 'var(--success)' : 'var(--text-muted)';
+        const hasSockdrive = await hasLocalSave();
+        const savedState = await getSaveState(GAME_ID);
+        const hasCustom = savedState && savedState.byteLength > 0;
+        const has = hasSockdrive || hasCustom;
+        if (has) {
+            const kb = savedState ? (savedState.byteLength / 1024).toFixed(0) : '?';
+            el.textContent = '💾 有存档 (' + kb + ' KB)';
+            el.style.color = 'var(--success)';
+            if (hint) hint.textContent = '✅ 下次打开此页面时会自动加载存档';
+        } else {
+            el.textContent = '📝 新游戏';
+            el.style.color = 'var(--text-muted)';
+            if (hint) hint.textContent = '游戏中保存后，点击下方 💾 保存按钮';
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -551,23 +566,43 @@
 
     async function saveGame() {
         const ss = document.getElementById('save-status');
+        if (!dosProps) {
+            window.DOS.App.showToast('游戏尚未加载，请先启动游戏', 'warning');
+            return;
+        }
+
         ss.textContent = '保存中...';
+        console.log('[game.js] Saving game... dosCI:', !!dosCI, 'persist:', typeof (dosCI || {}).persist);
+
         try {
             if (dosCI && typeof dosCI.persist === 'function') {
                 const changes = await dosCI.persist();
-                console.log('[game.js] persist() returned:', changes ? changes.byteLength : 0, 'bytes');
+                console.log('[game.js] persist() returned:', changes,
+                    'byteLength:', changes ? changes.byteLength : 0);
+
                 if (changes && changes.byteLength > 0) {
                     await putSaveState(GAME_ID, changes);
-                    console.log('[game.js] Save state stored in cache DB');
+                    ss.textContent = '已保存 (' + (changes.byteLength / 1024).toFixed(0) + ' KB)';
+                    window.DOS.App.showToast(
+                        '游戏进度已保存 ✅ (' + (changes.byteLength / 1024).toFixed(0) + ' KB)',
+                        'success'
+                    );
+                } else {
+                    // persist() returned nothing — js-dos may auto-persist
+                    ss.textContent = '已同步';
+                    window.DOS.App.showToast('游戏状态已同步 (js-dos 自动保存)', 'success');
                 }
+            } else {
+                // No persist API — js-dos auto-persists to IndexedDB
+                ss.textContent = '已保存 (自动)';
+                window.DOS.App.showToast('游戏进度由 js-dos 自动保存到本地', 'success');
             }
-            ss.textContent = '已保存';
-            window.DOS.App.showToast('游戏进度已保存到本地 ✅', 'success');
         } catch (e) {
             console.error('[game.js] Save error:', e);
-            ss.textContent = '已保存 (自动)';
-            window.DOS.App.showToast('游戏进度已自动保存', 'info');
+            ss.textContent = '保存失败';
+            window.DOS.App.showToast('保存失败: ' + e.message, 'error');
         }
+
         checkLocalSave();
     }
 

@@ -134,10 +134,12 @@
             <p style="font-size:0.85rem;">来源: <span id="source-indicator">检查中...</span></p>
             <p style="font-size:0.8rem;color:var(--text-dim);" id="source-detail">-</p>
             <p style="font-size:0.85rem;margin-top:8px;">存档: <span id="save-indicator">📝 新游戏</span></p>
+            <p style="font-size:0.75rem;color:var(--text-dim);" id="save-hint"></p>
             <button class="btn btn-sm" id="btn-clear-local" style="display:none;margin-top:8px;"
                     onclick="actionClearLocalFile()">清除文件关联</button>
             <p style="font-size:0.7rem;color:var(--text-dim);margin-top:8px;">
-                存档由 js-dos 管理，存储在浏览器本地。
+                存档由 js-dos 管理，存储在浏览器本地。<br>
+                关闭页面后重新打开即自动加载存档。
             </p>
         </div>
 
