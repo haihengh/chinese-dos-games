@@ -30,7 +30,7 @@
     //  Player creation
     // ═══════════════════════════════════════════════════════════════
 
-    function createDosPlayer() {
+    function createDosPlayer(bundleChangesUrl) {
         const container = document.getElementById('dos-container');
         const saveStatus = document.getElementById('save-status');
 
@@ -47,7 +47,8 @@
         loadingEl.innerHTML = LOADING_HTML;
         container.appendChild(loadingEl);
 
-        console.log('[game.js] Creating Dos player, url:', BUNDLE_URL);
+        console.log('[game.js] Creating Dos player, url:', BUNDLE_URL,
+            'changesUrl:', bundleChangesUrl || '(none)');
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -56,7 +57,7 @@
             }, 60000); // 60-second timeout
 
             try {
-                dosProps = Dos(container, {
+                const dosOpts = {
                     url: BUNDLE_URL,
                     backend: 'dosboxX',
                     volume: volume,
@@ -76,7 +77,12 @@
                             updateFullscreenButton();
                         }
                     },
-                });
+                };
+                // Pass bundleChangesUrl if we have one (for save restore)
+                if (bundleChangesUrl) {
+                    dosOpts.bundleChangesUrl = bundleChangesUrl;
+                }
+                dosProps = Dos(container, dosOpts);
                 console.log('[game.js] Dos() returned:', dosProps);
             } catch (err) {
                 clearTimeout(timeout);
@@ -100,14 +106,7 @@
         }
 
         try {
-            await createDosPlayer();
-            // If we just restored a cloud save, notify the user
-            if (sessionStorage.getItem('dos_save_loaded') === '1') {
-                sessionStorage.removeItem('dos_save_loaded');
-                const saveStatus = document.getElementById('save-status');
-                if (saveStatus) saveStatus.textContent = '存档已恢复';
-                window.DOS.App.showToast('云端存档已加载 ✅', 'success');
-            }
+            await createDosPlayer(null); // No changes on initial load
         } catch (err) {
             console.error('[game.js] Startup failed:', err);
             const le = document.getElementById('game-loading');
@@ -247,54 +246,42 @@
             window.DOS.App.showToast('请先登录以保存游戏进度', 'warning');
             return;
         }
-        if (!dosProps) {
-            window.DOS.App.showToast('游戏尚未加载', 'error');
+        if (!dosCI || typeof dosCI.persist !== 'function') {
+            window.DOS.App.showToast('此游戏不支持保存功能', 'error');
             return;
         }
 
         const saveStatus = document.getElementById('save-status');
         saveStatus.textContent = '保存中...';
-        console.log('[game.js] Saving game...');
+        console.log('[game.js] Saving game via dosCI.persist()...');
 
         try {
-            // Step 1 — persist in-memory filesystem → IndexedDB
-            const persisted = await dosProps.save();
-            console.log('[game.js] dosProps.save() returned:', persisted);
-            if (!persisted) {
+            // js-dos v8 proper API: persist() returns the changes bundle as Uint8Array
+            const changesBundle = await dosCI.persist();
+            console.log('[game.js] dosCI.persist() returned:', changesBundle,
+                'size:', changesBundle ? changesBundle.byteLength : 0);
+
+            if (!changesBundle || changesBundle.byteLength === 0) {
                 window.DOS.App.showToast('没有需要保存的进度 (可能游戏尚未产生存档文件)', 'warning');
                 saveStatus.textContent = '无新进度';
                 return;
             }
 
-            // Step 2 — export IndexedDB data
-            saveStatus.textContent = '正在导出存档...';
-            const saveBundle = await exportSaveBundle();
-            console.log('[game.js] Export result:', saveBundle ? `${Object.keys(saveBundle.dbs).length} DBs` : 'null');
-            if (!saveBundle) {
-                window.DOS.App.showToast('游戏进度已保存到浏览器 (云端同步不可用)', 'warning');
-                saveStatus.textContent = '已保存 (仅浏览器)';
-                return;
-            }
-
-            // Step 3 — upload to server
+            // Upload the raw changes bundle to server (as binary, not JSON)
             saveStatus.textContent = '正在上传到云端...';
-            const json = JSON.stringify(saveBundle);
-            const payload = JSON.stringify({ save_data: btoa(unescape(encodeURIComponent(json))) });
-            console.log('[game.js] Save payload size:', payload.length, 'bytes');
-
             const resp = await window.DOS.App.apiFetch(
                 `/api/games/${encodeURIComponent(GAME_ID)}/save`,
                 {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: payload,
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: changesBundle,
                 }
             );
 
             if (resp.ok) {
                 console.log('[game.js] Save uploaded successfully');
                 window.DOS.App.showToast('游戏进度已保存到云端 ✅', 'success');
-                saveStatus.textContent = '已保存 (云端 + 浏览器)';
+                saveStatus.textContent = '已保存 (云端)';
             } else {
                 const errData = await resp.json().catch(() => ({}));
                 throw new Error(errData.error || `服务器错误 (${resp.status})`);
@@ -317,101 +304,79 @@
         }
 
         const saveStatus = document.getElementById('save-status');
-        saveStatus.textContent = '正在查找云端存档...';
-        console.log('[game.js] Loading save...');
 
-        let saveBundle = null;
-
-        // ── Phase 1: Download & validate ──
+        // ── Phase 1: Check a save exists ──
+        let saveResp;
         try {
-            const resp = await window.DOS.App.apiFetch(
+            saveResp = await window.DOS.App.apiFetch(
                 `/api/games/${encodeURIComponent(GAME_ID)}/save`
             );
+        } catch (e) {
+            console.error('[game.js] Save check failed:', e);
+            return;
+        }
 
-            if (!resp.ok) {
-                if (resp.status === 404) {
-                    window.DOS.App.showToast('没有找到云端存档', 'warning');
-                } else {
-                    window.DOS.App.showToast('加载存档失败', 'error');
-                }
-                saveStatus.textContent = '游戏已就绪';
-                return;
+        if (!saveResp.ok) {
+            if (saveResp.status === 404) {
+                window.DOS.App.showToast('没有找到云端存档', 'warning');
+            } else {
+                window.DOS.App.showToast('加载存档失败', 'error');
             }
-
-            const blob = await resp.blob();
-            if (!blob || blob.size === 0) {
-                window.DOS.App.showToast('云端存档为空', 'warning');
-                return;
-            }
-            console.log('[game.js] Downloaded save blob:', blob.size, 'bytes');
-
-            const rawText = await blob.text();
-            saveBundle = JSON.parse(rawText);
-            console.log('[game.js] Parsed save bundle, DBs:', Object.keys(saveBundle.dbs || {}));
-
-            if (!saveBundle.dbs || Object.keys(saveBundle.dbs).length === 0) {
-                window.DOS.App.showToast('存档数据为空', 'warning');
-                return;
-            }
-        } catch (err) {
-            console.error('[game.js] Download/parse error:', err);
-            window.DOS.App.showToast('存档数据格式错误', 'error');
             saveStatus.textContent = '游戏已就绪';
             return;
         }
 
+        const blob = await saveResp.blob();
+        if (!blob || blob.size === 0) {
+            window.DOS.App.showToast('云端存档为空', 'warning');
+            return;
+        }
+        console.log('[game.js] Downloaded save changes, size:', blob.size, 'bytes');
+
         // ── Phase 2: Confirm ──
-        const ts = saveBundle.ts ? new Date(saveBundle.ts).toLocaleString('zh-CN') : '未知';
-        if (!confirm(`确定要加载云端存档吗？\n保存时间：${ts}\n当前未保存的进度会丢失。`)) return;
+        if (!confirm('确定要加载云端存档吗？\n当前未保存的进度会丢失。')) return;
 
-        // ── Phase 3: Stop current game & clear/restore IndexedDB ──
-        saveStatus.textContent = '正在清理旧存档...';
-        console.log('[game.js] Stopping current player for save restore');
+        // ── Phase 3: Create a Blob URL for the changes and restart ──
+        saveStatus.textContent = '正在恢复存档...';
+        console.log('[game.js] Restarting game with restored save changes');
 
-        // Stop the player gracefully so it releases IndexedDB connections
+        // Stop current player
         if (dosProps) {
             try { await dosProps.stop(); } catch (e) { console.warn('[game.js] stop() error:', e); }
             dosProps = null;
             dosCI = null;
         }
-        // Allow js-dos to release IndexedDB connections
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 500));
 
-        // Clear old IndexedDB data (must complete before writing new data)
-        try {
-            const oldDbNames = await discoverDbNames();
-            for (const name of oldDbNames) {
-                console.log('[game.js] Deleting IDB:', name);
-                await deleteDatabase(name);
-            }
-            saveDbNames = null;
-        } catch (e) {
-            console.warn('[game.js] IDB cleanup warning:', e);
-        }
+        // Create a Blob URL from the downloaded changes bundle.
+        // Revoke any previous changes URL to avoid memory leaks.
+        if (window.__dosChangesUrl) URL.revokeObjectURL(window.__dosChangesUrl);
+        window.__dosChangesUrl = URL.createObjectURL(blob);
+        console.log('[game.js] Changes Blob URL:', window.__dosChangesUrl);
 
-        // Write save data to IndexedDB
-        saveStatus.textContent = '正在恢复存档...';
-        console.log('[game.js] Writing save data to IndexedDB');
+        // Re-create the player, passing the changes as bundleChangesUrl.
+        // js-dos v8 will internally fetch this URL and apply the changes
+        // on top of the original game bundle.
         try {
-            await importSaveBundle(saveBundle);
-            console.log('[game.js] Save data written to IndexedDB');
+            await createDosPlayer(window.__dosChangesUrl);
+            console.log('[game.js] Game restarted with save changes');
+            window.DOS.App.showToast('云端存档已加载 ✅', 'success');
+            saveStatus.textContent = '存档已恢复';
         } catch (err) {
-            console.error('[game.js] IndexedDB write failed:', err);
-            window.DOS.App.showToast('存档数据写入失败', 'error');
-            saveStatus.textContent = '恢复失败';
-            return;
+            console.error('[game.js] Restart with save failed:', err);
+            URL.revokeObjectURL(window.__dosChangesUrl);
+            window.__dosChangesUrl = null;
+            // Fallback: start without save
+            try {
+                await createDosPlayer(null);
+                window.DOS.App.showToast('存档恢复失败，已启动新游戏', 'warning');
+                saveStatus.textContent = '游戏已就绪 (新游戏)';
+            } catch (e2) {
+                console.error('[game.js] Fallback start also failed:', e2);
+                window.DOS.App.showToast('游戏启动失败，请刷新页面', 'error');
+                saveStatus.textContent = '启动失败';
+            }
         }
-
-        // ── Phase 4: Reload page ──
-        // Reload instead of stop()→Dos() re-init.  Re-initialising Dos() on the
-        // same container element is fragile with js-dos v8 + DOSBox-X — it often
-        // leaves a blank screen.  A full page load lets the browser start fresh,
-        // and js-dos will pick up the IndexedDB data we just restored when it
-        // mounts IDBFS during normal initialisation.
-        sessionStorage.setItem('dos_save_loaded', '1');
-        saveStatus.textContent = '正在重新加载...';
-        console.log('[game.js] Reloading page to apply restored save');
-        window.location.reload();
     }
 
     // ═══════════════════════════════════════════════════════════════
