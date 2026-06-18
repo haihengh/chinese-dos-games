@@ -418,7 +418,12 @@
     //  IndexedDB helpers
     // ═══════════════════════════════════════════════════════════════
 
-    /** Discover which IndexedDB databases js-dos uses for IDBFS. */
+    /** Discover which IndexedDB databases js-dos v8 uses for persistence.
+     *
+     *  js-dos v8 does NOT use Emscripten IDBFS.  Instead it uses a custom
+     *  "sockdrive" layer that persists raw disk sectors as Blob values in
+     *  databases named "sockdrive (<drive>)" and "js-dos-cache (guest)".
+     */
     async function discoverDbNames() {
         if (saveDbNames) return saveDbNames;
 
@@ -431,17 +436,25 @@
             }
         } catch (e) { /* fall through */ }
 
-        // Always probe the most common Emscripten IDBFS mount names
-        const common = ['/home/web_user', '/', '/emscripten_idbfs', 'emscripten_idbfs'];
+        // js-dos v8 sockdrive storage patterns
+        const common = [
+            'sockdrive (hda)', 'sockdrive (hdb)', 'sockdrive (fda)', 'sockdrive (fdb)',
+            'js-dos-cache (guest)',
+            // Legacy Emscripten IDBFS patterns (for older js-dos versions)
+            '/home/web_user', '/', '/emscripten_idbfs', 'emscripten_idbfs',
+        ];
         for (const name of common) {
             if (!candidates.includes(name)) candidates.push(name);
         }
 
-        // Filter to ones that actually exist
+        // Filter to ones that actually exist (without creating empty DBs)
         const valid = [];
         for (const name of candidates) {
             const ok = await dbExists(name);
-            if (ok) valid.push(name);
+            if (ok) {
+                console.log('[game.js] Found IDB:', name);
+                valid.push(name);
+            }
         }
 
         console.log('[game.js] Discovered IDB names:', valid);
@@ -534,10 +547,17 @@
         });
     }
 
-    /** Read all entries from one object store, serialising binary values. */
+    /** Read all entries from one object store, serialising binary values.
+     *
+     *  js-dos v8 sockdrive stores disk sectors as Blob objects.  Because
+     *  reading Blob data is async we collect Blob references inside the
+     *  cursor loop (so the IndexedDB transaction stays alive) and convert
+     *  them to base64 afterwards.
+     */
     function readStore(db, storeName) {
         return new Promise((resolve) => {
             const entries = [];
+            const pendingBlobs = [];
             try {
                 const tx = db.transaction(storeName, 'readonly');
                 const store = tx.objectStore(storeName);
@@ -545,19 +565,40 @@
                 cursorReq.onsuccess = (e) => {
                     const cursor = e.target.result;
                     if (cursor) {
-                        entries.push({
-                            key: cursor.key,
-                            value: serialiseValue(cursor.value),
-                        });
+                        const value = cursor.value;
+                        if (value instanceof Blob) {
+                            // Save reference for async reading outside the tx
+                            pendingBlobs.push({ key: cursor.key, blob: value });
+                        } else {
+                            entries.push({
+                                key: cursor.key,
+                                value: serialiseValue(value),
+                            });
+                        }
                         cursor.continue();
                     } else {
-                        resolve(entries);
+                        // All entries collected — now convert Blobs
+                        resolve({ entries, pendingBlobs });
                     }
                 };
-                cursorReq.onerror = () => resolve(entries);
+                cursorReq.onerror = () => resolve({ entries, pendingBlobs });
             } catch (e) {
-                resolve(entries);
+                resolve({ entries: [], pendingBlobs: [] });
             }
+        }).then(async ({ entries, pendingBlobs }) => {
+            // Read Blob data outside the IndexedDB transaction
+            for (const { key, blob } of pendingBlobs) {
+                try {
+                    const buf = await blob.arrayBuffer();
+                    entries.push({
+                        key: key,
+                        value: { __b: bufToBase64(buf), __blob: true, __type: blob.type, __size: blob.size },
+                    });
+                } catch (err) {
+                    console.warn('[game.js] Failed to read Blob for key:', key, err);
+                }
+            }
+            return entries;
         });
     }
 
@@ -594,17 +635,28 @@
         return bytes.buffer;
     }
 
-    /** Deserialise a value, converting {__b: ...} markers back to ArrayBuffer. */
+    /** Deserialise a value, converting {__b: ...} markers back to ArrayBuffer
+     *  or Blob (for js-dos v8 sockdrive compatibility). */
     function deserialiseValue(v) {
         if (v && typeof v === 'object' && v.__b !== undefined) {
-            return base64ToBuf(v.__b);
+            const buf = base64ToBuf(v.__b);
+            // js-dos v8 sockdrive stores disk sectors as Blob, not ArrayBuffer
+            if (v.__blob) {
+                return new Blob([buf], { type: v.__type || '' });
+            }
+            return buf;
         }
         if (v && typeof v === 'object' && !Array.isArray(v)) {
             const out = {};
             for (const [k, val] of Object.entries(v)) {
-                out[k] = (val && typeof val === 'object' && val.__b !== undefined)
-                    ? base64ToBuf(val.__b)
-                    : val;
+                if (val && typeof val === 'object' && val.__b !== undefined) {
+                    const buf = base64ToBuf(val.__b);
+                    out[k] = val.__blob
+                        ? new Blob([buf], { type: val.__type || '' })
+                        : buf;
+                } else {
+                    out[k] = val;
+                }
             }
             return out;
         }
