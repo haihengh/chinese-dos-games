@@ -34,6 +34,11 @@
         const container = document.getElementById('dos-container');
         const saveStatus = document.getElementById('save-status');
 
+        if (!container) {
+            console.error('[game.js] #dos-container not found');
+            return Promise.reject(new Error('页面元素缺失'));
+        }
+
         // Clear container and re-add loading overlay
         container.innerHTML = '';
         const loadingEl = document.createElement('div');
@@ -42,10 +47,13 @@
         loadingEl.innerHTML = LOADING_HTML;
         container.appendChild(loadingEl);
 
+        console.log('[game.js] Creating Dos player, url:', BUNDLE_URL);
+
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
+                console.error('[game.js] Dos() ci-ready timeout — game did not start');
                 reject(new Error('游戏加载超时，请检查网络连接'));
-            }, 120000);
+            }, 60000); // 60-second timeout
 
             try {
                 dosProps = Dos(container, {
@@ -54,12 +62,14 @@
                     volume: volume,
                     autoStart: true,
                     onEvent: (event, ci) => {
+                        console.log('[game.js] Dos event:', event);
                         if (event === 'ci-ready') {
                             clearTimeout(timeout);
                             dosCI = ci;
                             const le = document.getElementById('game-loading');
                             if (le) le.classList.add('hidden');
-                            saveStatus.textContent = '游戏已就绪';
+                            if (saveStatus) saveStatus.textContent = '游戏已就绪';
+                            console.log('[game.js] Game ready — ci-ready received');
                             resolve(ci);
                         } else if (event === 'fullscreen-changed') {
                             isFullscreen = !!ci;
@@ -67,8 +77,10 @@
                         }
                     },
                 });
+                console.log('[game.js] Dos() returned:', dosProps);
             } catch (err) {
                 clearTimeout(timeout);
+                console.error('[game.js] Dos() threw synchronously:', err);
                 reject(err);
             }
         });
@@ -90,7 +102,7 @@
         try {
             await createDosPlayer();
         } catch (err) {
-            console.error('Failed to start game:', err);
+            console.error('[game.js] Startup failed:', err);
             const le = document.getElementById('game-loading');
             if (le) {
                 le.innerHTML = `
@@ -182,17 +194,21 @@
             await createDosPlayer();
             document.getElementById('save-status').textContent = '游戏已重启';
         } catch (e) {
-            console.error('Restart failed:', e);
+            console.error('[game.js] Restart failed:', e);
             document.getElementById('save-status').textContent = '重启失败';
         }
     }
 
     async function stopPlayer() {
+        console.log('[game.js] Stopping player...');
         if (dosProps) {
-            try { await dosProps.stop(); } catch (e) { /* ignore */ }
+            try { await dosProps.stop(); } catch (e) { console.warn('[game.js] stop() error:', e); }
             dosProps = null;
             dosCI = null;
         }
+        // Small delay to let js-dos release IndexedDB connections
+        await new Promise(r => setTimeout(r, 500));
+        console.log('[game.js] Player stopped');
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -211,12 +227,14 @@
 
         const saveStatus = document.getElementById('save-status');
         saveStatus.textContent = '保存中...';
+        console.log('[game.js] Saving game...');
 
         try {
             // Step 1 — persist in-memory filesystem → IndexedDB
             const persisted = await dosProps.save();
+            console.log('[game.js] dosProps.save() returned:', persisted);
             if (!persisted) {
-                window.DOS.App.showToast('没有需要保存的进度', 'warning');
+                window.DOS.App.showToast('没有需要保存的进度 (可能游戏尚未产生存档文件)', 'warning');
                 saveStatus.textContent = '无新进度';
                 return;
             }
@@ -224,8 +242,8 @@
             // Step 2 — export IndexedDB data
             saveStatus.textContent = '正在导出存档...';
             const saveBundle = await exportSaveBundle();
+            console.log('[game.js] Export result:', saveBundle ? `${Object.keys(saveBundle.dbs).length} DBs` : 'null');
             if (!saveBundle) {
-                // Browser save worked but we can't read IndexedDB
                 window.DOS.App.showToast('游戏进度已保存到浏览器 (云端同步不可用)', 'warning');
                 saveStatus.textContent = '已保存 (仅浏览器)';
                 return;
@@ -235,6 +253,7 @@
             saveStatus.textContent = '正在上传到云端...';
             const json = JSON.stringify(saveBundle);
             const payload = JSON.stringify({ save_data: btoa(unescape(encodeURIComponent(json))) });
+            console.log('[game.js] Save payload size:', payload.length, 'bytes');
 
             const resp = await window.DOS.App.apiFetch(
                 `/api/games/${encodeURIComponent(GAME_ID)}/save`,
@@ -246,6 +265,7 @@
             );
 
             if (resp.ok) {
+                console.log('[game.js] Save uploaded successfully');
                 window.DOS.App.showToast('游戏进度已保存到云端 ✅', 'success');
                 saveStatus.textContent = '已保存 (云端 + 浏览器)';
             } else {
@@ -253,7 +273,7 @@
                 throw new Error(errData.error || `服务器错误 (${resp.status})`);
             }
         } catch (err) {
-            console.error('Save error:', err);
+            console.error('[game.js] Save error:', err);
             window.DOS.App.showToast('保存失败: ' + err.message, 'error');
             saveStatus.textContent = '保存失败';
         }
@@ -271,7 +291,11 @@
 
         const saveStatus = document.getElementById('save-status');
         saveStatus.textContent = '正在查找云端存档...';
+        console.log('[game.js] Loading save...');
 
+        let saveBundle = null;
+
+        // ── Phase 1: Download & validate ──
         try {
             const resp = await window.DOS.App.apiFetch(
                 `/api/games/${encodeURIComponent(GAME_ID)}/save`
@@ -287,53 +311,92 @@
                 return;
             }
 
-            // Download and parse save blob
             const blob = await resp.blob();
             if (!blob || blob.size === 0) {
                 window.DOS.App.showToast('云端存档为空', 'warning');
                 return;
             }
+            console.log('[game.js] Downloaded save blob:', blob.size, 'bytes');
 
-            saveStatus.textContent = '正在解析存档...';
             const rawText = await blob.text();
-            let saveBundle;
-            try {
-                saveBundle = JSON.parse(rawText);
-            } catch (e) {
-                window.DOS.App.showToast('存档数据格式错误', 'error');
-                return;
-            }
+            saveBundle = JSON.parse(rawText);
+            console.log('[game.js] Parsed save bundle, DBs:', Object.keys(saveBundle.dbs || {}));
 
             if (!saveBundle.dbs || Object.keys(saveBundle.dbs).length === 0) {
                 window.DOS.App.showToast('存档数据为空', 'warning');
                 return;
             }
+        } catch (err) {
+            console.error('[game.js] Download/parse error:', err);
+            window.DOS.App.showToast('存档数据格式错误', 'error');
+            saveStatus.textContent = '游戏已就绪';
+            return;
+        }
 
-            // Confirm overwrite
-            const ts = saveBundle.ts ? new Date(saveBundle.ts).toLocaleString('zh-CN') : '未知';
-            if (!confirm(`确定要加载云端存档吗？\n保存时间：${ts}\n当前未保存的进度会丢失。`)) return;
+        // ── Phase 2: Confirm ──
+        const ts = saveBundle.ts ? new Date(saveBundle.ts).toLocaleString('zh-CN') : '未知';
+        if (!confirm(`确定要加载云端存档吗？\n保存时间：${ts}\n当前未保存的进度会丢失。`)) return;
 
-            // Stop current game
-            saveStatus.textContent = '正在停止游戏...';
-            await stopPlayer();
+        // ── Phase 3: Stop current game ──
+        saveStatus.textContent = '正在停止游戏...';
+        console.log('[game.js] Stopping current player for save restore');
+        await stopPlayer();
 
-            // Inject save data into IndexedDB
-            saveStatus.textContent = '正在恢复存档...';
+        // ── Phase 4: Clear old IndexedDB data ──
+        saveStatus.textContent = '正在清理旧存档...';
+        console.log('[game.js] Clearing old IndexedDB data');
+        try {
+            const oldDbNames = await discoverDbNames();
+            for (const name of oldDbNames) {
+                console.log('[game.js] Deleting IDB:', name);
+                await deleteDatabase(name);
+            }
+            // Invalidate cache so next discovery finds the freshly restored DBs
+            saveDbNames = null;
+        } catch (e) {
+            console.warn('[game.js] IDB cleanup warning:', e);
+        }
+
+        // ── Phase 5: Write save data to IndexedDB ──
+        saveStatus.textContent = '正在恢复存档...';
+        console.log('[game.js] Writing save data to IndexedDB');
+        try {
             await importSaveBundle(saveBundle);
+            console.log('[game.js] Save data written to IndexedDB');
+        } catch (err) {
+            console.error('[game.js] IndexedDB write failed:', err);
+            window.DOS.App.showToast('存档数据写入失败，将以新游戏启动', 'warning');
+            // Fall through — start fresh
+        }
 
-            // Restart game — it will pick up the saved filesystem from IndexedDB
-            saveStatus.textContent = '正在重新启动游戏...';
+        // ── Phase 6: Restart game ──
+        saveStatus.textContent = '正在重新启动游戏...';
+        console.log('[game.js] Creating new Dos player with restored save');
+        try {
             await createDosPlayer();
-
+            console.log('[game.js] Game restarted successfully with save');
             window.DOS.App.showToast('云端存档已加载 ✅', 'success');
             saveStatus.textContent = '存档已恢复';
         } catch (err) {
-            console.error('Load error:', err);
-            window.DOS.App.showToast('加载存档失败: ' + err.message, 'error');
-            saveStatus.textContent = '加载失败';
-            // Try to restart even after failure
-            if (!dosProps) {
-                try { await createDosPlayer(); } catch (e) { /* ignore */ }
+            console.error('[game.js] Restart after load failed:', err);
+            // Last-resort fallback: clear everything and start fresh
+            saveStatus.textContent = '存档恢复失败，正在清理...';
+            try {
+                const dbs = await discoverDbNames();
+                for (const name of dbs) {
+                    await deleteDatabase(name);
+                }
+                saveDbNames = null;
+            } catch (e) { /* ignore */ }
+
+            try {
+                await createDosPlayer();
+                window.DOS.App.showToast('存档恢复失败，已启动新游戏', 'warning');
+                saveStatus.textContent = '游戏已就绪 (新游戏)';
+            } catch (e2) {
+                console.error('[game.js] Final restart also failed:', e2);
+                window.DOS.App.showToast('游戏启动失败，请刷新页面', 'error');
+                saveStatus.textContent = '启动失败';
             }
         }
     }
@@ -347,15 +410,15 @@
         if (saveDbNames) return saveDbNames;
 
         let candidates = [];
-        // Try the standard API first
         try {
             if (typeof indexedDB.databases === 'function') {
                 const list = await indexedDB.databases();
                 candidates = list.map(d => d.name);
+                console.log('[game.js] indexedDB.databases():', candidates);
             }
         } catch (e) { /* fall through */ }
 
-        // Always try the most common Emscripten IDBFS mount names
+        // Always probe the most common Emscripten IDBFS mount names
         const common = ['/home/web_user', '/', '/emscripten_idbfs', 'emscripten_idbfs'];
         for (const name of common) {
             if (!candidates.includes(name)) candidates.push(name);
@@ -368,20 +431,36 @@
             if (ok) valid.push(name);
         }
 
+        console.log('[game.js] Discovered IDB names:', valid);
         saveDbNames = valid;
         return valid;
     }
 
-    /** Check whether an IndexedDB database exists (without keeping it open). */
+    /** Check whether an IndexedDB database exists. */
     function dbExists(name) {
         return new Promise((resolve) => {
             try {
                 const req = indexedDB.open(name);
                 req.onsuccess = () => { req.result.close(); resolve(true); };
                 req.onerror = () => resolve(false);
-                req.onblocked = () => resolve(false);
+                req.onblocked = () => { console.warn('[game.js] dbExists blocked:', name); resolve(false); };
             } catch (e) {
                 resolve(false);
+            }
+        });
+    }
+
+    /** Delete an IndexedDB database. */
+    function deleteDatabase(name) {
+        return new Promise((resolve) => {
+            try {
+                const req = indexedDB.deleteDatabase(name);
+                req.onsuccess = () => { console.log('[game.js] Deleted IDB:', name); resolve(); };
+                req.onerror = () => { console.warn('[game.js] Failed to delete IDB:', name, req.error); resolve(); };
+                req.onblocked = () => { console.warn('[game.js] Delete blocked:', name); resolve(); };
+            } catch (e) {
+                console.warn('[game.js] deleteDatabase error:', name, e);
+                resolve();
             }
         });
     }
@@ -389,15 +468,25 @@
     /** Export all data from the discovered databases into a serialisable bundle. */
     async function exportSaveBundle() {
         const dbNames = await discoverDbNames();
-        if (dbNames.length === 0) return null;
+        if (dbNames.length === 0) {
+            console.warn('[game.js] No IDB databases found to export');
+            return null;
+        }
 
         const dbs = {};
         for (const dbName of dbNames) {
-            const stores = await readAllStores(dbName);
-            if (stores && Object.keys(stores).length > 0) {
-                dbs[dbName] = stores;
+            try {
+                const stores = await readAllStores(dbName);
+                if (stores && Object.keys(stores).length > 0) {
+                    dbs[dbName] = stores;
+                    console.log('[game.js] Exported DB', dbName, 'stores:', Object.keys(stores).join(', '));
+                }
+            } catch (e) {
+                console.warn('[game.js] Failed to read DB', dbName, e);
             }
         }
+
+        if (Object.keys(dbs).length === 0) return null;
 
         return {
             v: 1,
@@ -512,11 +601,13 @@
     /** Write a save bundle back into IndexedDB. */
     async function importSaveBundle(bundle) {
         const dbNames = Object.keys(bundle.dbs);
+        console.log('[game.js] Importing save to', dbNames.length, 'DB(s):', dbNames.join(', '));
         for (const dbName of dbNames) {
             await writeAllStores(dbName, bundle.dbs[dbName]);
         }
-        // Invalidate cache so next save discovers the restored DBs
+        // Update the cache to include the DBs we just wrote
         saveDbNames = dbNames;
+        console.log('[game.js] Import complete');
     }
 
     /** Write store data into an IndexedDB database, creating stores if needed. */
@@ -525,31 +616,48 @@
             const storeNames = Object.keys(stores);
             if (storeNames.length === 0) return resolve();
 
-            // First open to check existing stores
+            console.log('[game.js] writeAllStores: db=', dbName, 'stores=', storeNames.join(', '));
+
+            // Open with version 1 to get the base version; if DB doesn't exist
+            // yet this will create it (version 1).
             const req = indexedDB.open(dbName);
             req.onerror = () => reject(req.error);
+            req.onblocked = () => {
+                console.warn('[game.js] writeAllStores blocked:', dbName);
+                reject(new Error('Database blocked — another connection may be open'));
+            };
             req.onsuccess = () => {
                 const db = req.result;
                 const existing = Array.from(db.objectStoreNames);
                 const version = db.version;
                 db.close();
+                console.log('[game.js] writeAllStores: existing stores=', existing.join(', '), 'version=', version);
 
                 const missing = storeNames.filter(n => !existing.includes(n));
                 if (missing.length === 0) {
-                    // All stores exist — write directly
                     writeStoresDirect(dbName, stores).then(resolve).catch(reject);
                 } else {
-                    // Need to create missing stores via version upgrade
+                    console.log('[game.js] Creating missing stores:', missing.join(', '));
                     const upReq = indexedDB.open(dbName, version + 1);
+                    upReq.onblocked = () => {
+                        console.warn('[game.js] Version upgrade blocked:', dbName);
+                        reject(new Error('Database upgrade blocked'));
+                    };
                     upReq.onupgradeneeded = (e) => {
                         const udb = e.target.result;
                         for (const name of missing) {
                             if (!udb.objectStoreNames.contains(name)) {
-                                try { udb.createObjectStore(name); } catch (_) { /* already exists */ }
+                                try { udb.createObjectStore(name); console.log('[game.js] Created store:', name); } catch (_) {}
                             }
                         }
                     };
-                    upReq.onsuccess = () => { upReq.result.close(); writeStoresDirect(dbName, stores).then(resolve).catch(reject); };
+                    upReq.onsuccess = () => {
+                        const upgradedDb = upReq.result;
+                        const ver = upgradedDb.version;
+                        upgradedDb.close();
+                        console.log('[game.js] DB upgraded to version', ver);
+                        writeStoresDirect(dbName, stores).then(resolve).catch(reject);
+                    };
                     upReq.onerror = () => reject(upReq.error);
                 }
             };
@@ -560,29 +668,54 @@
         return new Promise((resolve, reject) => {
             const req = indexedDB.open(dbName);
             req.onerror = () => reject(req.error);
+            req.onblocked = () => reject(new Error('Database blocked on write'));
             req.onsuccess = () => {
                 const db = req.result;
                 const names = Object.keys(stores);
                 let pending = names.length;
 
+                if (pending === 0) { db.close(); resolve(); return; }
+
                 for (const storeName of names) {
                     const entries = stores[storeName];
-                    if (!entries || entries.length === 0) { pending--; continue; }
-
-                    try {
-                        const tx = db.transaction(storeName, 'readwrite');
-                        const store = tx.objectStore(storeName);
-                        for (const { key, value } of entries) {
-                            store.put(deserialiseValue(value), key);
-                        }
-                        tx.oncomplete = () => { pending--; if (pending === 0) { db.close(); resolve(); } };
-                        tx.onerror = () => { pending--; if (pending === 0) { db.close(); resolve(); } };
-                    } catch (e) {
+                    if (!entries || entries.length === 0) {
                         pending--;
                         if (pending === 0) { db.close(); resolve(); }
+                        continue;
                     }
+
+                    (function (sName, ents) {
+                        try {
+                            const tx = db.transaction(sName, 'readwrite');
+                            const store = tx.objectStore(sName);
+                            let puts = 0;
+                            for (const { key, value } of ents) {
+                                const deser = deserialiseValue(value);
+                                store.put(deser, key);
+                                puts++;
+                            }
+                            console.log('[game.js] Wrote', puts, 'entries to', dbName + '/' + sName);
+                            tx.oncomplete = () => {
+                                pending--;
+                                if (pending === 0) { db.close(); resolve(); }
+                            };
+                            tx.onerror = () => {
+                                console.warn('[game.js] Transaction error on', dbName + '/' + sName);
+                                pending--;
+                                if (pending === 0) { db.close(); resolve(); }
+                            };
+                            tx.onabort = () => {
+                                console.warn('[game.js] Transaction aborted on', dbName + '/' + sName);
+                                pending--;
+                                if (pending === 0) { db.close(); resolve(); }
+                            };
+                        } catch (e) {
+                            console.warn('[game.js] writeStoresDirect error for', sName, e);
+                            pending--;
+                            if (pending === 0) { db.close(); resolve(); }
+                        }
+                    })(storeName, entries);
                 }
-                if (pending === 0) { db.close(); resolve(); }
             };
         });
     }
