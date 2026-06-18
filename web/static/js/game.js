@@ -101,6 +101,13 @@
 
         try {
             await createDosPlayer();
+            // If we just restored a cloud save, notify the user
+            if (sessionStorage.getItem('dos_save_loaded') === '1') {
+                sessionStorage.removeItem('dos_save_loaded');
+                const saveStatus = document.getElementById('save-status');
+                if (saveStatus) saveStatus.textContent = '存档已恢复';
+                window.DOS.App.showToast('云端存档已加载 ✅', 'success');
+            }
         } catch (err) {
             console.error('[game.js] Startup failed:', err);
             const le = document.getElementById('game-loading');
@@ -189,14 +196,34 @@
         if (!confirm('确定要重新开始游戏吗？未保存的进度会丢失。')) return;
 
         document.getElementById('save-status').textContent = '重启中...';
-        await stopPlayer();
-        try {
-            await createDosPlayer();
-            document.getElementById('save-status').textContent = '游戏已重启';
-        } catch (e) {
-            console.error('[game.js] Restart failed:', e);
-            document.getElementById('save-status').textContent = '重启失败';
+
+        // Stop player so it releases IndexedDB connections
+        if (dosProps) {
+            try { await dosProps.stop(); } catch (e) { console.warn('[game.js] stop() error:', e); }
+            dosProps = null;
+            dosCI = null;
         }
+        await new Promise(r => setTimeout(r, 300));
+
+        // Clear IndexedDB so the fresh start doesn't pick up old saves
+        try {
+            const dbs = await discoverDbNames();
+            for (const name of dbs) {
+                await deleteDatabase(name);
+            }
+            saveDbNames = null;
+        } catch (e) { /* ignore */ }
+
+        // Delete cloud save so it doesn't show as an existing save
+        try {
+            await window.DOS.App.apiFetch(
+                `/api/games/${encodeURIComponent(GAME_ID)}/save`,
+                { method: 'DELETE' }
+            );
+        } catch (e) { /* ignore */ }
+
+        // Reload page for a clean game start
+        window.location.reload();
     }
 
     async function stopPlayer() {
@@ -337,27 +364,32 @@
         const ts = saveBundle.ts ? new Date(saveBundle.ts).toLocaleString('zh-CN') : '未知';
         if (!confirm(`确定要加载云端存档吗？\n保存时间：${ts}\n当前未保存的进度会丢失。`)) return;
 
-        // ── Phase 3: Stop current game ──
-        saveStatus.textContent = '正在停止游戏...';
-        console.log('[game.js] Stopping current player for save restore');
-        await stopPlayer();
-
-        // ── Phase 4: Clear old IndexedDB data ──
+        // ── Phase 3: Stop current game & clear/restore IndexedDB ──
         saveStatus.textContent = '正在清理旧存档...';
-        console.log('[game.js] Clearing old IndexedDB data');
+        console.log('[game.js] Stopping current player for save restore');
+
+        // Stop the player gracefully so it releases IndexedDB connections
+        if (dosProps) {
+            try { await dosProps.stop(); } catch (e) { console.warn('[game.js] stop() error:', e); }
+            dosProps = null;
+            dosCI = null;
+        }
+        // Allow js-dos to release IndexedDB connections
+        await new Promise(r => setTimeout(r, 300));
+
+        // Clear old IndexedDB data (must complete before writing new data)
         try {
             const oldDbNames = await discoverDbNames();
             for (const name of oldDbNames) {
                 console.log('[game.js] Deleting IDB:', name);
                 await deleteDatabase(name);
             }
-            // Invalidate cache so next discovery finds the freshly restored DBs
             saveDbNames = null;
         } catch (e) {
             console.warn('[game.js] IDB cleanup warning:', e);
         }
 
-        // ── Phase 5: Write save data to IndexedDB ──
+        // Write save data to IndexedDB
         saveStatus.textContent = '正在恢复存档...';
         console.log('[game.js] Writing save data to IndexedDB');
         try {
@@ -365,40 +397,21 @@
             console.log('[game.js] Save data written to IndexedDB');
         } catch (err) {
             console.error('[game.js] IndexedDB write failed:', err);
-            window.DOS.App.showToast('存档数据写入失败，将以新游戏启动', 'warning');
-            // Fall through — start fresh
+            window.DOS.App.showToast('存档数据写入失败', 'error');
+            saveStatus.textContent = '恢复失败';
+            return;
         }
 
-        // ── Phase 6: Restart game ──
-        saveStatus.textContent = '正在重新启动游戏...';
-        console.log('[game.js] Creating new Dos player with restored save');
-        try {
-            await createDosPlayer();
-            console.log('[game.js] Game restarted successfully with save');
-            window.DOS.App.showToast('云端存档已加载 ✅', 'success');
-            saveStatus.textContent = '存档已恢复';
-        } catch (err) {
-            console.error('[game.js] Restart after load failed:', err);
-            // Last-resort fallback: clear everything and start fresh
-            saveStatus.textContent = '存档恢复失败，正在清理...';
-            try {
-                const dbs = await discoverDbNames();
-                for (const name of dbs) {
-                    await deleteDatabase(name);
-                }
-                saveDbNames = null;
-            } catch (e) { /* ignore */ }
-
-            try {
-                await createDosPlayer();
-                window.DOS.App.showToast('存档恢复失败，已启动新游戏', 'warning');
-                saveStatus.textContent = '游戏已就绪 (新游戏)';
-            } catch (e2) {
-                console.error('[game.js] Final restart also failed:', e2);
-                window.DOS.App.showToast('游戏启动失败，请刷新页面', 'error');
-                saveStatus.textContent = '启动失败';
-            }
-        }
+        // ── Phase 4: Reload page ──
+        // Reload instead of stop()→Dos() re-init.  Re-initialising Dos() on the
+        // same container element is fragile with js-dos v8 + DOSBox-X — it often
+        // leaves a blank screen.  A full page load lets the browser start fresh,
+        // and js-dos will pick up the IndexedDB data we just restored when it
+        // mounts IDBFS during normal initialisation.
+        sessionStorage.setItem('dos_save_loaded', '1');
+        saveStatus.textContent = '正在重新加载...';
+        console.log('[game.js] Reloading page to apply restored save');
+        window.location.reload();
     }
 
     // ═══════════════════════════════════════════════════════════════
