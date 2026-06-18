@@ -17,6 +17,7 @@
     let isPaused = false;
     let isFullscreen = false;
     let volume = 1.0;
+    let bundleBlobUrl = null;  // Track Blob URL for cleanup
 
     const GAME_ID = window.GAME_ID;
     const BUNDLE_URL = `/api/games/${encodeURIComponent(GAME_ID)}/bundle`;
@@ -34,25 +35,52 @@
     // ═══════════════════════════════════════════════════════════════
     //  Cache API — makes any bundle available at BUNDLE_URL
     //  so js-dos always sees the same URL and can find its saves.
+    //  Falls back gracefully when Cache API is unavailable
+    //  (e.g. Firefox private browsing, older browsers).
     // ═══════════════════════════════════════════════════════════════
 
+    function cacheApiAvailable() {
+        return typeof caches !== 'undefined' && typeof Cache !== 'undefined';
+    }
+
+    /** Cache a blob at BUNDLE_URL. Returns true on success. */
     async function cacheBundleAtUrl(blob) {
-        const cache = await caches.open(CACHE_NAME);
-        // Remove any old cached response for this URL
-        await cache.delete(BUNDLE_URL);
-        // Cache the new content
-        const response = new Response(blob, {
-            headers: { 'Content-Type': 'application/zip' },
-        });
-        await cache.put(BUNDLE_URL, response);
-        console.log('[game.js] Cached bundle at', BUNDLE_URL, (blob.size / 1048576).toFixed(1), 'MB');
+        if (!cacheApiAvailable()) {
+            console.warn('[game.js] Cache API not available, skipping cache');
+            return false;
+        }
+        try {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.delete(BUNDLE_URL);
+            await cache.put(BUNDLE_URL, new Response(blob, {
+                headers: { 'Content-Type': 'application/zip' },
+            }));
+            console.log('[game.js] Cached bundle at', BUNDLE_URL, (blob.size / 1048576).toFixed(1), 'MB');
+            return true;
+        } catch (e) {
+            console.warn('[game.js] Cache API error:', e.message);
+            return false;
+        }
     }
 
     /** Check if we have a bundle cached at BUNDLE_URL. */
     async function hasBundleCached() {
-        const cache = await caches.open(CACHE_NAME);
-        const match = await cache.match(BUNDLE_URL);
-        return !!match;
+        if (!cacheApiAvailable()) return false;
+        try {
+            const cache = await caches.open(CACHE_NAME);
+            return !!(await cache.match(BUNDLE_URL));
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /** Clear stale cache data. */
+    async function clearBundleCache() {
+        if (!cacheApiAvailable()) return;
+        try {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.delete(BUNDLE_URL);
+        } catch (e) { /* ignore */ }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -69,7 +97,37 @@
                 if (!db.objectStoreNames.contains(STORE_SAVES)) db.createObjectStore(STORE_SAVES);
             };
             req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
+            req.onerror = () => {
+                // If version conflict (old data), delete and recreate
+                console.warn('[game.js] IDB open failed, clearing:', req.error);
+                const delReq = indexedDB.deleteDatabase(CACHE_DB);
+                delReq.onsuccess = () => {
+                    const retry = indexedDB.open(CACHE_DB, 3);
+                    retry.onupgradeneeded = (e2) => {
+                        const db2 = e2.target.result;
+                        if (!db2.objectStoreNames.contains(STORE_BUNDLES)) db2.createObjectStore(STORE_BUNDLES);
+                        if (!db2.objectStoreNames.contains(STORE_HANDLES)) db2.createObjectStore(STORE_HANDLES);
+                        if (!db2.objectStoreNames.contains(STORE_SAVES)) db2.createObjectStore(STORE_SAVES);
+                    };
+                    retry.onsuccess = () => resolve(retry.result);
+                    retry.onerror = () => reject(retry.error);
+                };
+                delReq.onerror = () => reject(delReq.error);
+            };
+            req.onblocked = () => {
+                console.warn('[game.js] IDB open blocked, retrying...');
+                setTimeout(() => {
+                    const retry = indexedDB.open(CACHE_DB, 3);
+                    retry.onupgradeneeded = (e2) => {
+                        const db2 = e2.target.result;
+                        if (!db2.objectStoreNames.contains(STORE_BUNDLES)) db2.createObjectStore(STORE_BUNDLES);
+                        if (!db2.objectStoreNames.contains(STORE_HANDLES)) db2.createObjectStore(STORE_HANDLES);
+                        if (!db2.objectStoreNames.contains(STORE_SAVES)) db2.createObjectStore(STORE_SAVES);
+                    };
+                    retry.onsuccess = () => resolve(retry.result);
+                    retry.onerror = () => reject(retry.error);
+                }, 500);
+            };
         });
     }
 
@@ -235,40 +293,54 @@
     //  Bundle preparation — ensure content is at BUNDLE_URL
     // ═══════════════════════════════════════════════════════════════
 
+    /** Returns URL to use for Dos(), or null if user action needed. */
     async function prepareBundle() {
         // 1. Try stored local file handle
         const localFile = await tryStoredHandle();
         if (localFile) {
-            await cacheBundleAtUrl(localFile);
+            const cached = await cacheBundleAtUrl(localFile);
             await idbBackupBundle(GAME_ID, localFile);
-            document.getElementById('source-indicator').textContent = '📁 本地文件';
-            document.getElementById('source-detail').textContent =
-                localFile.name + ' · ' + (localFile.size / 1048576).toFixed(1) + ' MB';
-            return true;
+            const src = document.getElementById('source-indicator');
+            const det = document.getElementById('source-detail');
+            if (src) src.textContent = '📁 本地文件';
+            if (det) det.textContent = localFile.name + ' · ' + (localFile.size / 1048576).toFixed(1) + ' MB';
+            if (!cached) {
+                // Cache API unavailable — fall back to Blob URL
+                // (saves may not persist because URL changes each session)
+                console.warn('[game.js] Cache API unavailable, using Blob URL (saves may not persist)');
+                return URL.createObjectURL(localFile);
+            }
+            return BUNDLE_URL;
         }
 
         // 2. Try IndexedDB backup (survives Cache API eviction)
         const idbBlob = await idbGetBundle(GAME_ID);
         if (idbBlob) {
-            await cacheBundleAtUrl(idbBlob);
-            document.getElementById('source-indicator').textContent = '💾 浏览器缓存';
-            document.getElementById('source-detail').textContent =
-                (idbBlob.size / 1048576).toFixed(1) + ' MB';
-            return true;
+            const cached = await cacheBundleAtUrl(idbBlob);
+            const src = document.getElementById('source-indicator');
+            const det = document.getElementById('source-detail');
+            if (src) src.textContent = '💾 浏览器缓存';
+            if (det) det.textContent = (idbBlob.size / 1048576).toFixed(1) + ' MB';
+            if (!cached) {
+                return URL.createObjectURL(idbBlob);
+            }
+            return BUNDLE_URL;
         }
 
-        // 3. Nothing available — need user action
-        return false;
+        // 3. Nothing available — need user action (first-run UI)
+        return null;
     }
 
     // ═══════════════════════════════════════════════════════════════
     //  Player — always uses BUNDLE_URL (consistent!)
     // ═══════════════════════════════════════════════════════════════
 
-    function createDosPlayer() {
+    function createDosPlayer(bundleUrl) {
         const container = document.getElementById('dos-container');
         const saveStatus = document.getElementById('save-status');
         if (!container) return Promise.reject(new Error('页面元素缺失'));
+
+        const url = bundleUrl || BUNDLE_URL;
 
         container.innerHTML = '';
         const le = document.createElement('div');
@@ -277,7 +349,7 @@
         le.innerHTML = LOADING_HTML;
         container.appendChild(le);
 
-        console.log('[game.js] Dos() url:', BUNDLE_URL);
+        console.log('[game.js] Dos() url:', url);
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -286,7 +358,7 @@
 
             try {
                 dosProps = Dos(container, {
-                    url: BUNDLE_URL,          // <-- ALWAYS the same URL
+                    url: url,
                     backend: 'dosboxX',
                     volume: volume,
                     autoStart: true,
@@ -329,18 +401,24 @@
         checkLocalSave();
 
         try {
-            const ready = await prepareBundle();
+            const bundleUrl = await prepareBundle();
 
-            if (!ready) {
+            if (!bundleUrl) {
                 showFirstRunUI();
                 return;
             }
 
-            await createDosPlayer();
+            // Track Blob URL for cleanup
+            if (bundleUrl !== BUNDLE_URL) bundleBlobUrl = bundleUrl;
+
+            await createDosPlayer(bundleUrl);
             hideFirstRunUI();
             checkLocalSave();
         } catch (err) {
             console.error('[game.js] Startup failed:', err);
+            // Clear possibly stale cached data and retry once
+            await clearBundleCache();
+            await idbRemoveBundle(GAME_ID).catch(() => {});
             const le = document.getElementById('game-loading');
             if (le) {
                 le.innerHTML = `<p style="color:var(--danger)">❌ 加载失败</p>
@@ -374,12 +452,13 @@
         if (!handle) return;
         const file = await readFileFromHandle(handle);
         await putFileHandle(GAME_ID, handle);
-        await cacheBundleAtUrl(file);
+        const cached = await cacheBundleAtUrl(file);
         await idbBackupBundle(GAME_ID, file);
         updateStorageInfo();
 
+        const url = cached ? BUNDLE_URL : URL.createObjectURL(file);
         try {
-            await createDosPlayer();
+            await createDosPlayer(url);
             hideFirstRunUI();
             checkLocalSave();
         } catch (err) {
@@ -395,11 +474,16 @@
             if (!resp.ok) throw new Error('下载失败 (' + resp.status + ')');
             const blob = await resp.blob();
             console.log('[game.js] Downloaded:', (blob.size / 1048576).toFixed(1), 'MB');
-            await cacheBundleAtUrl(blob);
+
+            const cached = await cacheBundleAtUrl(blob);
             await idbBackupBundle(GAME_ID, blob);
             updateStorageInfo();
 
-            await createDosPlayer();
+            // If Cache API succeeded, use BUNDLE_URL (consistent → saves work).
+            // Otherwise use Blob URL (game works, but saves may not persist).
+            const url = cached ? BUNDLE_URL : URL.createObjectURL(blob);
+
+            await createDosPlayer(url);
             hideFirstRunUI();
             checkLocalSave();
         } catch (err) {
@@ -603,6 +687,7 @@
     // ═══════════════════════════════════════════════════════════════
 
     window.addEventListener('beforeunload', () => {
+        if (bundleBlobUrl) { URL.revokeObjectURL(bundleBlobUrl); bundleBlobUrl = null; }
         if (dosProps) { try { dosProps.stop(); } catch (e) { /* */ } }
     });
 
