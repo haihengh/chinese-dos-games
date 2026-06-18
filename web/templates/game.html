@@ -23,8 +23,9 @@
             <button class="control-btn" id="btn-volume-down" title="减小音量">🔉</button>
             <button class="control-btn" id="btn-volume-up" title="增加音量">🔊</button>
             <span style="flex:1"></span>
-            <button class="control-btn save-btn" id="btn-save" title="保存到云端">💾 保存进度</button>
-            <button class="control-btn save-btn" id="btn-load" title="从云端加载">📥 加载进度</button>
+            <button class="control-btn save-btn" id="btn-save" title="保存进度到本地">💾 保存</button>
+            <button class="control-btn save-btn" id="btn-delete-save" title="删除本地存档">🗑️ 删档</button>
+            <button class="control-btn" id="btn-clear-cache" title="清除游戏缓存">🧹 清缓存</button>
             <span id="save-status" style="font-size:0.8rem;color:var(--text-muted)"></span>
         </div>
     </div>
@@ -86,10 +87,12 @@
         </div>
         {% endif %}
 
-        <!-- Save Info -->
-        <div class="sidebar-card" id="save-info-card" style="display:none;">
-            <h3>💾 存档信息</h3>
-            <p id="save-info-text" style="font-size:0.85rem;"></p>
+        <!-- Storage Info -->
+        <div class="sidebar-card" id="storage-card">
+            <h3>💾 本地存储</h3>
+            <p style="font-size:0.85rem;">存档: <span id="save-indicator">📝 新游戏</span></p>
+            <p style="font-size:0.85rem;">缓存: <span id="cache-info">检查中...</span> (<span id="cache-size">-</span>)</p>
+            <p style="font-size:0.75rem;color:var(--text-dim);margin-top:6px;">游戏和存档均存储在浏览器本地，不会上传到服务器。</p>
         </div>
 
         <!-- Metadata Card -->
