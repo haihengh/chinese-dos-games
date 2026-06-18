@@ -9,24 +9,65 @@
 <div class="game-page">
     <!-- Left: Game Player -->
     <div class="game-player">
-        <div class="game-canvas-container" id="dos-container">
-            <div class="game-loading" id="game-loading">
-                <div class="loading-spinner"></div>
-                <p class="loading-text">正在加载游戏...</p>
+
+        <!-- First-run UI: shown when no local file / no cache -->
+        <div class="first-run-card" id="first-run-ui" style="display:none;">
+            <h2 style="margin-bottom:8px;">🎮 {{ game.name_zh }}</h2>
+            <p style="color:var(--text-muted);margin-bottom:24px;">
+                首次运行此游戏。请从你的本地机器选择游戏文件，或从服务器下载。
+            </p>
+
+            <div class="first-run-options">
+                <!-- Option A: Pick from local machine -->
+                <div class="run-option-card" id="opt-local">
+                    <div class="run-option-icon">📁</div>
+                    <h4>从本地加载</h4>
+                    <p class="run-option-desc">
+                        选择你电脑上的 .jsdos 或 .zip 游戏文件。
+                        之后每次打开都会记住这个文件位置，不需要重新选择。
+                    </p>
+                    <button class="btn btn-primary btn-block" onclick="actionPickLocalFile()">
+                        📂 选择本地文件
+                    </button>
+                </div>
+
+                <!-- Option B: Download from server -->
+                <div class="run-option-card" id="opt-server">
+                    <div class="run-option-icon">☁️</div>
+                    <h4>从服务器下载</h4>
+                    <p class="run-option-desc">
+                        首次下载游戏文件到浏览器缓存。
+                        {% if game.filesize %}
+                        文件大小约 {{ (game.filesize / 1048576) | round(1) }} MB。
+                        {% endif %}
+                    </p>
+                    <button class="btn btn-primary btn-block" onclick="actionDownloadFromServer()">
+                        ⬇ 下载游戏
+                    </button>
+                </div>
             </div>
         </div>
 
-        <div class="game-controls">
-            <button class="control-btn" id="btn-fullscreen" title="全屏">🖥️ 全屏</button>
-            <button class="control-btn" id="btn-pause" title="暂停/继续">⏯️ 暂停</button>
-            <button class="control-btn" id="btn-restart" title="重新开始">🔄 重启</button>
-            <button class="control-btn" id="btn-volume-down" title="减小音量">🔉</button>
-            <button class="control-btn" id="btn-volume-up" title="增加音量">🔊</button>
-            <span style="flex:1"></span>
-            <button class="control-btn save-btn" id="btn-save" title="保存进度到本地">💾 保存</button>
-            <button class="control-btn save-btn" id="btn-delete-save" title="删除本地存档">🗑️ 删档</button>
-            <button class="control-btn" id="btn-clear-cache" title="清除游戏缓存">🧹 清缓存</button>
-            <span id="save-status" style="font-size:0.8rem;color:var(--text-muted)"></span>
+        <!-- Player area: shown when game is running -->
+        <div id="player-area">
+            <div class="game-canvas-container" id="dos-container">
+                <div class="game-loading" id="game-loading">
+                    <div class="loading-spinner"></div>
+                    <p class="loading-text" id="loading-text">正在加载游戏...</p>
+                </div>
+            </div>
+
+            <div class="game-controls">
+                <button class="control-btn" id="btn-fullscreen" title="全屏">🖥️ 全屏</button>
+                <button class="control-btn" id="btn-pause" title="暂停/继续">⏯️ 暂停</button>
+                <button class="control-btn" id="btn-restart" title="重新开始">🔄 重启</button>
+                <button class="control-btn" id="btn-volume-down" title="减小音量">🔉</button>
+                <button class="control-btn" id="btn-volume-up" title="增加音量">🔊</button>
+                <span style="flex:1"></span>
+                <button class="control-btn save-btn" id="btn-save" title="保存进度到本地">💾 保存</button>
+                <button class="control-btn save-btn" id="btn-delete-save" title="删除本地存档">🗑️ 删档</button>
+                <span id="save-status" style="font-size:0.8rem;color:var(--text-muted)"></span>
+            </div>
         </div>
     </div>
 
@@ -90,9 +131,14 @@
         <!-- Storage Info -->
         <div class="sidebar-card" id="storage-card">
             <h3>💾 本地存储</h3>
-            <p style="font-size:0.85rem;">存档: <span id="save-indicator">📝 新游戏</span></p>
-            <p style="font-size:0.85rem;">缓存: <span id="cache-info">检查中...</span> (<span id="cache-size">-</span>)</p>
-            <p style="font-size:0.75rem;color:var(--text-dim);margin-top:6px;">游戏和存档均存储在浏览器本地，不会上传到服务器。</p>
+            <p style="font-size:0.85rem;">来源: <span id="source-indicator">检查中...</span></p>
+            <p style="font-size:0.8rem;color:var(--text-dim);" id="source-detail">-</p>
+            <p style="font-size:0.85rem;margin-top:8px;">存档: <span id="save-indicator">📝 新游戏</span></p>
+            <button class="btn btn-sm" id="btn-clear-local" style="display:none;margin-top:8px;"
+                    onclick="actionClearLocalFile()">清除文件关联</button>
+            <p style="font-size:0.7rem;color:var(--text-dim);margin-top:8px;">
+                存档由 js-dos 管理，存储在浏览器本地。
+            </p>
         </div>
 
         <!-- Metadata Card -->
