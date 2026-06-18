@@ -1,9 +1,13 @@
 /**
  * Chinese DOS Games — js-dos v8 Game Player
  *
- * Loads game bundles from the user's local machine (File System Access API)
- * with server download as fallback.  All save data stays in the browser
- * (js-dos v8 sockdrive → IndexedDB) — nothing uploaded to any server.
+ * Saves work because we always use the same bundle URL for Dos().
+ * Local files / cached downloads are served at that URL via the
+ * browser's Cache API, so js-dos sees a consistent URL and can
+ * match existing sockdrive IndexedDB data to the right game.
+ *
+ * File System Access API lets users pick a .jsdos/.zip from their
+ * local machine.  Server download is the fallback.
  */
 (function () {
     'use strict';
@@ -13,14 +17,14 @@
     let isPaused = false;
     let isFullscreen = false;
     let volume = 1.0;
-    let bundleBlobUrl = null;
 
     const GAME_ID = window.GAME_ID;
     const BUNDLE_URL = `/api/games/${encodeURIComponent(GAME_ID)}/bundle`;
+    const CACHE_NAME = 'dos-games-v1';
     const CACHE_DB = 'dos-games-cache';
     const STORE_BUNDLES = 'bundles';
-    const STORE_HANDLES = 'file-handles';   // FileSystemFileHandle store
-    const STORE_SAVES = 'saves';            // persist() Uint8Array store
+    const STORE_HANDLES = 'file-handles';
+    const STORE_SAVES = 'saves';
 
     const LOADING_HTML = `
         <div class="loading-spinner"></div>
@@ -28,7 +32,31 @@
     `;
 
     // ═══════════════════════════════════════════════════════════════
-    //  IndexedDB helpers
+    //  Cache API — makes any bundle available at BUNDLE_URL
+    //  so js-dos always sees the same URL and can find its saves.
+    // ═══════════════════════════════════════════════════════════════
+
+    async function cacheBundleAtUrl(blob) {
+        const cache = await caches.open(CACHE_NAME);
+        // Remove any old cached response for this URL
+        await cache.delete(BUNDLE_URL);
+        // Cache the new content
+        const response = new Response(blob, {
+            headers: { 'Content-Type': 'application/zip' },
+        });
+        await cache.put(BUNDLE_URL, response);
+        console.log('[game.js] Cached bundle at', BUNDLE_URL, (blob.size / 1048576).toFixed(1), 'MB');
+    }
+
+    /** Check if we have a bundle cached at BUNDLE_URL. */
+    async function hasBundleCached() {
+        const cache = await caches.open(CACHE_NAME);
+        const match = await cache.match(BUNDLE_URL);
+        return !!match;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  IndexedDB helpers (handles + bundle backup + saves)
     // ═══════════════════════════════════════════════════════════════
 
     function openCacheDB() {
@@ -36,154 +64,132 @@
             const req = indexedDB.open(CACHE_DB, 3);
             req.onupgradeneeded = (e) => {
                 const db = e.target.result;
-                if (!db.objectStoreNames.contains(STORE_BUNDLES)) {
-                    db.createObjectStore(STORE_BUNDLES);
-                }
-                if (!db.objectStoreNames.contains(STORE_HANDLES)) {
-                    db.createObjectStore(STORE_HANDLES);
-                }
-                if (!db.objectStoreNames.contains(STORE_SAVES)) {
-                    db.createObjectStore(STORE_SAVES);
-                }
+                if (!db.objectStoreNames.contains(STORE_BUNDLES)) db.createObjectStore(STORE_BUNDLES);
+                if (!db.objectStoreNames.contains(STORE_HANDLES)) db.createObjectStore(STORE_HANDLES);
+                if (!db.objectStoreNames.contains(STORE_SAVES)) db.createObjectStore(STORE_SAVES);
             };
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);
         });
     }
 
-    // ── Bundle blob cache (server download fallback) ──
+    // ── FileSystemFileHandle ──
 
-    async function getCachedBundle(gameId) {
-        try {
-            const db = await openCacheDB();
-            return new Promise((resolve) => {
-                const tx = db.transaction(STORE_BUNDLES, 'readonly');
-                const req = tx.objectStore(STORE_BUNDLES).get(gameId);
-                req.onsuccess = () => { db.close(); resolve(req.result || null); };
-                req.onerror = () => { db.close(); resolve(null); };
-            });
-        } catch (e) { return null; }
-    }
-
-    async function putCachedBundle(gameId, blob) {
-        try {
-            const db = await openCacheDB();
-            return new Promise((resolve) => {
-                const tx = db.transaction(STORE_BUNDLES, 'readwrite');
-                tx.objectStore(STORE_BUNDLES).put(blob, gameId);
-                tx.oncomplete = () => { db.close(); resolve(); };
-                tx.onerror = () => { db.close(); resolve(); };
-            });
-        } catch (e) { /* ignore */ }
-    }
-
-    async function removeCachedBundle(gameId) {
-        try {
-            const db = await openCacheDB();
-            return new Promise((resolve) => {
-                const tx = db.transaction(STORE_BUNDLES, 'readwrite');
-                tx.objectStore(STORE_BUNDLES).delete(gameId);
-                tx.oncomplete = () => { db.close(); resolve(); };
-                tx.onerror = () => { db.close(); resolve(); };
-            });
-        } catch (e) { /* ignore */ }
-    }
-
-    // ── FileSystemFileHandle persistence ──
-
-    /** Store a FileSystemFileHandle for this game. */
     async function putFileHandle(gameId, handle) {
-        try {
-            const db = await openCacheDB();
-            return new Promise((resolve) => {
-                const tx = db.transaction(STORE_HANDLES, 'readwrite');
-                tx.objectStore(STORE_HANDLES).put(handle, gameId);
-                tx.oncomplete = () => { db.close(); resolve(); };
-                tx.onerror = () => { db.close(); resolve(); };
-            });
-        } catch (e) { /* ignore */ }
+        const db = await openCacheDB();
+        return new Promise((r) => {
+            const tx = db.transaction(STORE_HANDLES, 'readwrite');
+            tx.objectStore(STORE_HANDLES).put(handle, gameId);
+            tx.oncomplete = () => { db.close(); r(); };
+            tx.onerror = () => { db.close(); r(); };
+        });
     }
 
-    /** Retrieve the stored FileSystemFileHandle, or null. */
     async function getFileHandle(gameId) {
         try {
             const db = await openCacheDB();
-            return new Promise((resolve) => {
+            return new Promise((r) => {
                 const tx = db.transaction(STORE_HANDLES, 'readonly');
                 const req = tx.objectStore(STORE_HANDLES).get(gameId);
-                req.onsuccess = () => { db.close(); resolve(req.result || null); };
-                req.onerror = () => { db.close(); resolve(null); };
+                req.onsuccess = () => { db.close(); r(req.result || null); };
+                req.onerror = () => { db.close(); r(null); };
             });
         } catch (e) { return null; }
     }
 
     async function removeFileHandle(gameId) {
-        try {
-            const db = await openCacheDB();
-            return new Promise((resolve) => {
-                const tx = db.transaction(STORE_HANDLES, 'readwrite');
-                tx.objectStore(STORE_HANDLES).delete(gameId);
-                tx.oncomplete = () => { db.close(); resolve(); };
-                tx.onerror = () => { db.close(); resolve(); };
-            });
-        } catch (e) { /* ignore */ }
+        const db = await openCacheDB();
+        return new Promise((r) => {
+            const tx = db.transaction(STORE_HANDLES, 'readwrite');
+            tx.objectStore(STORE_HANDLES).delete(gameId);
+            tx.oncomplete = () => { db.close(); r(); };
+            tx.onerror = () => { db.close(); r(); };
+        });
     }
 
-    // ── Save-state persistence (persist() result) ──
+    // ── Bundle backup in IDB (fallback if Cache API is cleared) ──
 
-    async function putSaveState(gameId, changesBundle) {
+    async function idbBackupBundle(gameId, blob) {
+        const db = await openCacheDB();
+        return new Promise((r) => {
+            const tx = db.transaction(STORE_BUNDLES, 'readwrite');
+            tx.objectStore(STORE_BUNDLES).put(blob, gameId);
+            tx.oncomplete = () => { db.close(); r(); };
+            tx.onerror = () => { db.close(); r(); };
+        });
+    }
+
+    async function idbGetBundle(gameId) {
         try {
             const db = await openCacheDB();
-            return new Promise((resolve) => {
-                const tx = db.transaction(STORE_SAVES, 'readwrite');
-                tx.objectStore(STORE_SAVES).put(changesBundle, gameId);
-                tx.oncomplete = () => { db.close(); resolve(); };
-                tx.onerror = () => { db.close(); resolve(); };
+            return new Promise((r) => {
+                const tx = db.transaction(STORE_BUNDLES, 'readonly');
+                const req = tx.objectStore(STORE_BUNDLES).get(gameId);
+                req.onsuccess = () => { db.close(); r(req.result || null); };
+                req.onerror = () => { db.close(); r(null); };
             });
-        } catch (e) { /* ignore */ }
+        } catch (e) { return null; }
+    }
+
+    async function idbRemoveBundle(gameId) {
+        const db = await openCacheDB();
+        return new Promise((r) => {
+            const tx = db.transaction(STORE_BUNDLES, 'readwrite');
+            tx.objectStore(STORE_BUNDLES).delete(gameId);
+            tx.oncomplete = () => { db.close(); r(); };
+            tx.onerror = () => { db.close(); r(); };
+        });
+    }
+
+    // ── Save state (persist() result) ──
+
+    async function putSaveState(gameId, data) {
+        const db = await openCacheDB();
+        return new Promise((r) => {
+            const tx = db.transaction(STORE_SAVES, 'readwrite');
+            tx.objectStore(STORE_SAVES).put(data, gameId);
+            tx.oncomplete = () => { db.close(); r(); };
+            tx.onerror = () => { db.close(); r(); };
+        });
     }
 
     async function getSaveState(gameId) {
         try {
             const db = await openCacheDB();
-            return new Promise((resolve) => {
+            return new Promise((r) => {
                 const tx = db.transaction(STORE_SAVES, 'readonly');
                 const req = tx.objectStore(STORE_SAVES).get(gameId);
-                req.onsuccess = () => { db.close(); resolve(req.result || null); };
-                req.onerror = () => { db.close(); resolve(null); };
+                req.onsuccess = () => { db.close(); r(req.result || null); };
+                req.onerror = () => { db.close(); r(null); };
             });
         } catch (e) { return null; }
     }
 
     async function removeSaveState(gameId) {
-        try {
-            const db = await openCacheDB();
-            return new Promise((resolve) => {
-                const tx = db.transaction(STORE_SAVES, 'readwrite');
-                tx.objectStore(STORE_SAVES).delete(gameId);
-                tx.oncomplete = () => { db.close(); resolve(); };
-                tx.onerror = () => { db.close(); resolve(); };
-            });
-        } catch (e) { /* ignore */ }
+        const db = await openCacheDB();
+        return new Promise((r) => {
+            const tx = db.transaction(STORE_SAVES, 'readwrite');
+            tx.objectStore(STORE_SAVES).delete(gameId);
+            tx.oncomplete = () => { db.close(); r(); };
+            tx.onerror = () => { db.close(); r(); };
+        });
     }
 
-    // ── Local save helpers ──
+    // ── Sockdrive helpers ──
 
     async function deleteLocalSaves() {
-        console.log('[game.js] Deleting local saves...');
         let names = [];
         try {
             if (typeof indexedDB.databases === 'function') {
                 names = (await indexedDB.databases()).map(d => d.name);
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) { /* */ }
         for (const name of names) {
             if (name.startsWith('sockdrive ') || name.startsWith('js-dos-cache ')) {
                 await new Promise((r) => {
                     const req = indexedDB.deleteDatabase(name);
                     req.onsuccess = r; req.onerror = r; req.onblocked = r;
                 });
-                console.log('[game.js] Deleted:', name);
             }
         }
     }
@@ -196,100 +202,70 @@
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  File System Access API — load game from local machine
+    //  File System Access API
     // ═══════════════════════════════════════════════════════════════
 
-    /** Let the user pick a .jsdos or .zip file from their local machine. */
     async function pickLocalFile() {
-        if (!window.showOpenFilePicker) {
-            window.DOS.App.showToast('你的浏览器不支持文件系统访问，请使用 Chrome 或 Edge', 'error');
-            return null;
-        }
+        if (!window.showOpenFilePicker) return null;
         try {
             const [handle] = await window.showOpenFilePicker({
-                types: [{
-                    description: 'js-dos Bundle',
-                    accept: { 'application/zip': ['.jsdos', '.zip'] },
-                }],
+                types: [{ description: 'js-dos Bundle',
+                    accept: { 'application/zip': ['.jsdos', '.zip'] } }],
             });
-            console.log('[game.js] User picked:', handle.name);
             return handle;
-        } catch (e) {
-            if (e.name !== 'AbortError') {
-                console.error('[game.js] File picker error:', e);
-            }
-            return null;
-        }
+        } catch (e) { return null; }
     }
 
-    /** Read a Blob from a FileSystemFileHandle (requests permission if needed). */
     async function readFileFromHandle(handle) {
         const opts = { mode: 'read' };
         if (await handle.queryPermission(opts) !== 'granted') {
-            const granted = await handle.requestPermission(opts);
-            if (!granted) throw new Error('文件读取权限被拒绝');
+            if (!await handle.requestPermission(opts)) throw new Error('文件读取权限被拒绝');
         }
-        const file = await handle.getFile();
-        console.log('[game.js] Read local file:', file.name, (file.size / 1048576).toFixed(1), 'MB');
-        return file;  // File extends Blob
+        return await handle.getFile();
     }
 
-    /** Check if we have a stored handle and can still read from it. */
     async function tryStoredHandle() {
         const handle = await getFileHandle(GAME_ID);
         if (!handle) return null;
-        try {
-            return await readFileFromHandle(handle);
-        } catch (e) {
-            console.warn('[game.js] Stored handle no longer valid:', e.message);
-            await removeFileHandle(GAME_ID);
-            return null;
-        }
+        try { return await readFileFromHandle(handle); }
+        catch (e) { await removeFileHandle(GAME_ID); return null; }
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  Bundle sources
+    //  Bundle preparation — ensure content is at BUNDLE_URL
     // ═══════════════════════════════════════════════════════════════
 
-    /** Download bundle from server, cache it, return Blob URL. */
-    async function downloadFromServer() {
-        const lt = document.getElementById('loading-text');
-        if (lt) lt.textContent = '正在从服务器下载游戏...';
-        console.log('[game.js] Downloading from server:', BUNDLE_URL);
-        const resp = await fetch(BUNDLE_URL);
-        if (!resp.ok) throw new Error(`服务器下载失败 (${resp.status})`);
-        const blob = await resp.blob();
-        console.log('[game.js] Downloaded:', (blob.size / 1048576).toFixed(1), 'MB');
-        await putCachedBundle(GAME_ID, blob);
-        return URL.createObjectURL(blob);
-    }
-
-    /** Get a bundle URL — priority: local file > IndexedDB cache > server. */
-    async function getBundleUrl() {
+    async function prepareBundle() {
         // 1. Try stored local file handle
         const localFile = await tryStoredHandle();
         if (localFile) {
+            await cacheBundleAtUrl(localFile);
+            await idbBackupBundle(GAME_ID, localFile);
             document.getElementById('source-indicator').textContent = '📁 本地文件';
-            return URL.createObjectURL(localFile);
+            document.getElementById('source-detail').textContent =
+                localFile.name + ' · ' + (localFile.size / 1048576).toFixed(1) + ' MB';
+            return true;
         }
 
-        // 2. Try IndexedDB cache (from previous server download)
-        const cached = await getCachedBundle(GAME_ID);
-        if (cached) {
+        // 2. Try IndexedDB backup (survives Cache API eviction)
+        const idbBlob = await idbGetBundle(GAME_ID);
+        if (idbBlob) {
+            await cacheBundleAtUrl(idbBlob);
             document.getElementById('source-indicator').textContent = '💾 浏览器缓存';
-            console.log('[game.js] Using cached bundle:', (cached.size / 1048576).toFixed(1), 'MB');
-            return URL.createObjectURL(cached);
+            document.getElementById('source-detail').textContent =
+                (idbBlob.size / 1048576).toFixed(1) + ' MB';
+            return true;
         }
 
-        // 3. No local file, no cache — must download
-        return null;
+        // 3. Nothing available — need user action
+        return false;
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  Player
+    //  Player — always uses BUNDLE_URL (consistent!)
     // ═══════════════════════════════════════════════════════════════
 
-    function createDosPlayer(bundleUrl, saveBundleUrl) {
+    function createDosPlayer() {
         const container = document.getElementById('dos-container');
         const saveStatus = document.getElementById('save-status');
         if (!container) return Promise.reject(new Error('页面元素缺失'));
@@ -301,8 +277,7 @@
         le.innerHTML = LOADING_HTML;
         container.appendChild(le);
 
-        console.log('[game.js] Dos() bundle:', bundleUrl,
-            'save:', saveBundleUrl ? saveBundleUrl.substring(0, 40) + '...' : '(none)');
+        console.log('[game.js] Dos() url:', BUNDLE_URL);
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -310,8 +285,8 @@
             }, 120000);
 
             try {
-                const opts = {
-                    url: bundleUrl,
+                dosProps = Dos(container, {
+                    url: BUNDLE_URL,          // <-- ALWAYS the same URL
                     backend: 'dosboxX',
                     volume: volume,
                     autoStart: true,
@@ -332,13 +307,7 @@
                             if (lt) lt.textContent = '正在启动模拟器...';
                         }
                     },
-                };
-                // Pass saved changes as bundleChangesUrl so js-dos layers them
-                // on top of the original bundle, restoring previous progress.
-                if (saveBundleUrl) {
-                    opts.bundleChangesUrl = saveBundleUrl;
-                }
-                dosProps = Dos(container, opts);
+                });
             } catch (err) {
                 clearTimeout(timeout);
                 reject(err);
@@ -354,38 +323,20 @@
         const container = document.getElementById('dos-container');
         if (!container || !GAME_ID) return;
 
-        // Always set up controls and metadata — even if the game
-        // isn't loaded yet (first-run UI).  Otherwise buttons
-        // inside #player-area have no handlers after first-run
-        // loads the game.
         setupControls();
         loadMetadata();
         updateStorageInfo();
         checkLocalSave();
 
         try {
-            let url = await getBundleUrl();
+            const ready = await prepareBundle();
 
-            if (!url) {
+            if (!ready) {
                 showFirstRunUI();
                 return;
             }
 
-            bundleBlobUrl = url;
-
-            // Check for saved state from previous session
-            let saveBlobUrl = null;
-            const savedChanges = await getSaveState(GAME_ID);
-            if (savedChanges && savedChanges.byteLength > 0) {
-                saveBlobUrl = URL.createObjectURL(
-                    new Blob([savedChanges], { type: 'application/octet-stream' })
-                );
-                if (window.__dosSaveUrl) URL.revokeObjectURL(window.__dosSaveUrl);
-                window.__dosSaveUrl = saveBlobUrl;
-                console.log('[game.js] Restoring save state, size:', savedChanges.byteLength, 'bytes');
-            }
-
-            await createDosPlayer(url, saveBlobUrl);
+            await createDosPlayer();
             hideFirstRunUI();
             checkLocalSave();
         } catch (err) {
@@ -401,7 +352,7 @@
     });
 
     // ═══════════════════════════════════════════════════════════════
-    //  First-run UI (no local file, no cache)
+    //  First-run UI
     // ═══════════════════════════════════════════════════════════════
 
     function showFirstRunUI() {
@@ -415,37 +366,43 @@
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  UI actions (called from onclick in HTML)
+    //  UI actions (exposed globally for HTML onclick)
     // ═══════════════════════════════════════════════════════════════
 
     async function actionPickLocalFile() {
         const handle = await pickLocalFile();
         if (!handle) return;
-
         const file = await readFileFromHandle(handle);
         await putFileHandle(GAME_ID, handle);
+        await cacheBundleAtUrl(file);
+        await idbBackupBundle(GAME_ID, file);
         updateStorageInfo();
 
-        if (bundleBlobUrl) URL.revokeObjectURL(bundleBlobUrl);
-        bundleBlobUrl = URL.createObjectURL(file);
-
         try {
-            await createDosPlayer(bundleBlobUrl);
+            await createDosPlayer();
             hideFirstRunUI();
+            checkLocalSave();
         } catch (err) {
-            console.error('[game.js] Local file load failed:', err);
             window.DOS.App.showToast('文件加载失败: ' + err.message, 'error');
         }
     }
 
     async function actionDownloadFromServer() {
+        const lt = document.getElementById('loading-text');
         try {
-            bundleBlobUrl = await downloadFromServer();
+            if (lt) lt.textContent = '正在从服务器下载游戏...';
+            const resp = await fetch(BUNDLE_URL);
+            if (!resp.ok) throw new Error('下载失败 (' + resp.status + ')');
+            const blob = await resp.blob();
+            console.log('[game.js] Downloaded:', (blob.size / 1048576).toFixed(1), 'MB');
+            await cacheBundleAtUrl(blob);
+            await idbBackupBundle(GAME_ID, blob);
             updateStorageInfo();
-            await createDosPlayer(bundleBlobUrl);
+
+            await createDosPlayer();
             hideFirstRunUI();
+            checkLocalSave();
         } catch (err) {
-            console.error('[game.js] Server download failed:', err);
             window.DOS.App.showToast('下载失败: ' + err.message, 'error');
         }
     }
@@ -453,43 +410,44 @@
     async function actionClearLocalFile() {
         await removeFileHandle(GAME_ID);
         updateStorageInfo();
-        window.DOS.App.showToast('已清除本地文件关联，下次将提示选择文件', 'info');
+        window.DOS.App.showToast('已清除本地文件关联', 'info');
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  UI update
+    //  UI updates
     // ═══════════════════════════════════════════════════════════════
 
     async function updateStorageInfo() {
         const handle = await getFileHandle(GAME_ID);
-        const cached = await getCachedBundle(GAME_ID);
-
+        const idbBlob = await idbGetBundle(GAME_ID);
+        const cached = await hasBundleCached();
         const srcEl = document.getElementById('source-indicator');
         const detailEl = document.getElementById('source-detail');
+        const clearBtn = document.getElementById('btn-clear-local');
 
         if (handle) {
             if (srcEl) srcEl.textContent = '📁 本地文件';
-            // Try to read file name from handle
             try {
                 const opts = { mode: 'read' };
                 if (await handle.queryPermission(opts) === 'granted') {
-                    const file = await handle.getFile();
-                    if (detailEl) detailEl.textContent = file.name + ' · ' + (file.size / 1048576).toFixed(1) + ' MB';
+                    const f = await handle.getFile();
+                    if (detailEl) detailEl.textContent = f.name + ' · ' + (f.size / 1048576).toFixed(1) + ' MB';
                 } else {
-                    if (detailEl) detailEl.textContent = '需要文件读取权限';
+                    if (detailEl) detailEl.textContent = '需授权读取';
                 }
-            } catch (e) {
-                if (detailEl) detailEl.textContent = '文件已不可用';
-            }
-            document.getElementById('btn-clear-local').style.display = '';
-        } else if (cached) {
+            } catch (e) { if (detailEl) detailEl.textContent = '文件不可用'; }
+            if (clearBtn) clearBtn.style.display = '';
+        } else if (idbBlob || cached) {
             if (srcEl) srcEl.textContent = '💾 浏览器缓存';
-            if (detailEl) detailEl.textContent = (cached.size / 1048576).toFixed(1) + ' MB · 服务器下载';
-            document.getElementById('btn-clear-local').style.display = 'none';
+            if (detailEl) {
+                const sz = idbBlob ? idbBlob.size : 0;
+                if (detailEl) detailEl.textContent = sz ? (sz / 1048576).toFixed(1) + ' MB' : '已缓存';
+            }
+            if (clearBtn) clearBtn.style.display = 'none';
         } else {
             if (srcEl) srcEl.textContent = '☁️ 需要下载';
             if (detailEl) detailEl.textContent = '首次运行需下载或选择本地文件';
-            document.getElementById('btn-clear-local').style.display = 'none';
+            if (clearBtn) clearBtn.style.display = 'none';
         }
     }
 
@@ -497,19 +455,18 @@
         const el = document.getElementById('save-indicator');
         const hint = document.getElementById('save-hint');
         if (!el) return;
-        const hasSockdrive = await hasLocalSave();
-        const savedState = await getSaveState(GAME_ID);
-        const hasCustom = savedState && savedState.byteLength > 0;
-        const has = hasSockdrive || hasCustom;
+        const hasSd = await hasLocalSave();
+        const saved = await getSaveState(GAME_ID);
+        const has = hasSd || (saved && saved.byteLength > 0);
         if (has) {
-            const kb = savedState ? (savedState.byteLength / 1024).toFixed(0) : '?';
+            const kb = saved ? (saved.byteLength / 1024).toFixed(0) : (hasSd ? '?' : '0');
             el.textContent = '💾 有存档 (' + kb + ' KB)';
             el.style.color = 'var(--success)';
-            if (hint) hint.textContent = '✅ 下次打开此页面时会自动加载存档';
+            if (hint) hint.textContent = '✅ 下次打开此页面时自动加载存档';
         } else {
             el.textContent = '📝 新游戏';
             el.style.color = 'var(--text-muted)';
-            if (hint) hint.textContent = '游戏中保存后，点击下方 💾 保存按钮';
+            if (hint) hint.textContent = '在游戏中保存后，点击下方 💾 保存按钮';
         }
     }
 
@@ -527,12 +484,8 @@
         document.getElementById('btn-delete-save').addEventListener('click', deleteSave);
 
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'F11' || (e.key === 'Enter' && e.altKey)) {
-                e.preventDefault(); toggleFullscreen();
-            }
-            if (e.ctrlKey && e.key === 's') {
-                e.preventDefault(); saveGame();
-            }
+            if (e.key === 'F11' || (e.key === 'Enter' && e.altKey)) { e.preventDefault(); toggleFullscreen(); }
+            if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveGame(); }
         });
         document.addEventListener('fullscreenchange', () => {
             if (!document.fullscreenElement) { isFullscreen = false; updateFullscreenButton(); }
@@ -567,33 +520,27 @@
     async function saveGame() {
         const ss = document.getElementById('save-status');
         if (!dosProps) {
-            window.DOS.App.showToast('游戏尚未加载，请先启动游戏', 'warning');
+            window.DOS.App.showToast('游戏尚未加载', 'warning');
             return;
         }
 
         ss.textContent = '保存中...';
-        console.log('[game.js] Saving game... dosCI:', !!dosCI, 'persist:', typeof (dosCI || {}).persist);
+        console.log('[game.js] Saving — dosCI:', !!dosCI, 'persist:', typeof (dosCI || {}).persist);
 
         try {
             if (dosCI && typeof dosCI.persist === 'function') {
                 const changes = await dosCI.persist();
-                console.log('[game.js] persist() returned:', changes,
-                    'byteLength:', changes ? changes.byteLength : 0);
-
+                console.log('[game.js] persist() returned:', changes ? changes.byteLength : 0, 'bytes');
                 if (changes && changes.byteLength > 0) {
                     await putSaveState(GAME_ID, changes);
                     ss.textContent = '已保存 (' + (changes.byteLength / 1024).toFixed(0) + ' KB)';
-                    window.DOS.App.showToast(
-                        '游戏进度已保存 ✅ (' + (changes.byteLength / 1024).toFixed(0) + ' KB)',
-                        'success'
-                    );
+                    window.DOS.App.showToast('游戏进度已保存 ✅', 'success');
                 } else {
-                    // persist() returned nothing — js-dos may auto-persist
+                    // js-dos auto-persists to sockdrive
                     ss.textContent = '已同步';
                     window.DOS.App.showToast('游戏状态已同步 (js-dos 自动保存)', 'success');
                 }
             } else {
-                // No persist API — js-dos auto-persists to IndexedDB
                 ss.textContent = '已保存 (自动)';
                 window.DOS.App.showToast('游戏进度由 js-dos 自动保存到本地', 'success');
             }
@@ -621,7 +568,7 @@
         if (!confirm('确定要重新开始吗？未保存的进度会丢失。')) return;
         document.getElementById('save-status').textContent = '重启中...';
         if (dosProps) {
-            try { await dosProps.stop(); } catch (e) { /* ignore */ }
+            try { await dosProps.stop(); } catch (e) { /* */ }
             dosProps = null; dosCI = null;
         }
         await new Promise(r => setTimeout(r, 300));
@@ -648,7 +595,7 @@
             if (data.description_en && !data.description_zh) html += `<p style="font-size:0.85rem;line-height:1.7;color:var(--text);">${data.description_en}</p>`;
             if (data.wikipedia_url) html += `<a href="${data.wikipedia_url}" target="_blank" rel="noopener" class="sidebar-link" style="margin-top:8px;">📖 Wikipedia →</a>`;
             if (html) { content.innerHTML = html; card.style.display = 'block'; }
-        } catch (e) { /* ignore */ }
+        } catch (e) { /* */ }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -656,11 +603,10 @@
     // ═══════════════════════════════════════════════════════════════
 
     window.addEventListener('beforeunload', () => {
-        if (bundleBlobUrl) { URL.revokeObjectURL(bundleBlobUrl); bundleBlobUrl = null; }
-        if (dosProps) { try { dosProps.stop(); } catch (e) { /* ignore */ } }
+        if (dosProps) { try { dosProps.stop(); } catch (e) { /* */ } }
     });
 
-    // ── Expose onclick handlers for HTML buttons (outside IIFE scope) ──
+    // Expose for HTML onclick handlers
     window.actionPickLocalFile = actionPickLocalFile;
     window.actionDownloadFromServer = actionDownloadFromServer;
     window.actionClearLocalFile = actionClearLocalFile;
