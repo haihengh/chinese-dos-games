@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /d/code/chinese-dos-games)",
+      "Bash(node *)",
+      "KillShell"
+    ]
+  }
+}

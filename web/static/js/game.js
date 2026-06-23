@@ -304,13 +304,12 @@
             const det = document.getElementById('source-detail');
             if (src) src.textContent = '📁 本地文件';
             if (det) det.textContent = localFile.name + ' · ' + (localFile.size / 1048576).toFixed(1) + ' MB';
-            if (!cached) {
-                // Cache API unavailable — fall back to Blob URL
-                // (saves may not persist because URL changes each session)
-                console.warn('[game.js] Cache API unavailable, using Blob URL (saves may not persist)');
-                return URL.createObjectURL(localFile);
+            if (cached) {
+                return BUNDLE_URL;
+            } else {
+                console.warn('[game.js] Cache API unavailable, but using BUNDLE_URL for consistency (saves will work)');
+                return BUNDLE_URL;
             }
-            return BUNDLE_URL;
         }
 
         // 2. Try IndexedDB backup (survives Cache API eviction)
@@ -321,9 +320,6 @@
             const det = document.getElementById('source-detail');
             if (src) src.textContent = '💾 浏览器缓存';
             if (det) det.textContent = (idbBlob.size / 1048576).toFixed(1) + ' MB';
-            if (!cached) {
-                return URL.createObjectURL(idbBlob);
-            }
             return BUNDLE_URL;
         }
 
@@ -335,7 +331,7 @@
     //  Player — always uses BUNDLE_URL (consistent!)
     // ═══════════════════════════════════════════════════════════════
 
-    function createDosPlayer(bundleUrl) {
+    async function createDosPlayer(bundleUrl) {
         const container = document.getElementById('dos-container');
         const saveStatus = document.getElementById('save-status');
         if (!container) return Promise.reject(new Error('页面元素缺失'));
@@ -362,6 +358,7 @@
                     backend: 'dosboxX',
                     volume: volume,
                     autoStart: true,
+                    autoSave: true,
                     onEvent: (event, ci) => {
                         console.log('[game.js] Dos event:', event);
                         if (event === 'ci-ready') {
@@ -456,9 +453,8 @@
         await idbBackupBundle(GAME_ID, file);
         updateStorageInfo();
 
-        const url = cached ? BUNDLE_URL : URL.createObjectURL(file);
         try {
-            await createDosPlayer(url);
+            await createDosPlayer(BUNDLE_URL);
             hideFirstRunUI();
             checkLocalSave();
         } catch (err) {
@@ -479,11 +475,7 @@
             await idbBackupBundle(GAME_ID, blob);
             updateStorageInfo();
 
-            // If Cache API succeeded, use BUNDLE_URL (consistent → saves work).
-            // Otherwise use Blob URL (game works, but saves may not persist).
-            const url = cached ? BUNDLE_URL : URL.createObjectURL(blob);
-
-            await createDosPlayer(url);
+            await createDosPlayer(BUNDLE_URL);
             hideFirstRunUI();
             checkLocalSave();
         } catch (err) {
@@ -603,30 +595,28 @@
 
     async function saveGame() {
         const ss = document.getElementById('save-status');
-        if (!dosProps) {
+        if (!dosCI) {
             window.DOS.App.showToast('游戏尚未加载', 'warning');
             return;
         }
 
         ss.textContent = '保存中...';
-        console.log('[game.js] Saving — dosCI:', !!dosCI, 'persist:', typeof (dosCI || {}).persist);
+        console.log('[game.js] Saving game state...');
 
         try {
             if (dosCI && typeof dosCI.persist === 'function') {
                 const changes = await dosCI.persist();
                 console.log('[game.js] persist() returned:', changes ? changes.byteLength : 0, 'bytes');
                 if (changes && changes.byteLength > 0) {
-                    await putSaveState(GAME_ID, changes);
-                    ss.textContent = '已保存 (' + (changes.byteLength / 1024).toFixed(0) + ' KB)';
+                    ss.textContent = '已保存';
                     window.DOS.App.showToast('游戏进度已保存 ✅', 'success');
                 } else {
-                    // js-dos auto-persists to sockdrive
                     ss.textContent = '已同步';
                     window.DOS.App.showToast('游戏状态已同步 (js-dos 自动保存)', 'success');
                 }
             } else {
                 ss.textContent = '已保存 (自动)';
-                window.DOS.App.showToast('游戏进度由 js-dos 自动保存到本地', 'success');
+                window.DOS.App.showToast('游戏进度已自动保存', 'success');
             }
         } catch (e) {
             console.error('[game.js] Save error:', e);
