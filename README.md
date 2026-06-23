@@ -2,8 +2,16 @@
 
 网址： https://dos.lol
 
-
 中文 DOS 游戏合集，目前共有 1898 款游戏。
+
+## 新增功能 · Recent Updates
+
+✨ **Save/Restore 功能修复** (2025-06-23)
+- 游戏存档现在能正确保存并在页面刷新后恢复
+- 使用浏览器 IndexedDB 本地存储，无需云端同步
+- 无需登录即可保存游戏进度
+
+详见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 下载游戏文件
 

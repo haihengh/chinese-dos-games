@@ -1,13 +1,26 @@
 /**
  * Chinese DOS Games — js-dos v8 Game Player
  *
- * Saves work because we always use the same bundle URL for Dos().
- * Local files / cached downloads are served at that URL via the
- * browser's Cache API, so js-dos sees a consistent URL and can
- * match existing sockdrive IndexedDB data to the right game.
+ * Save Architecture:
+ * ─────────────────
+ * Game saves work because we ALWAYS use a consistent BUNDLE_URL for js-dos,
+ * regardless of whether Cache API is available:
  *
- * File System Access API lets users pick a .jsdos/.zip from their
- * local machine.  Server download is the fallback.
+ * - BUNDLE_URL = /api/games/{GAME_ID}/bundle (always same URL)
+ * - Cache API: serves bundle from browser Cache API (if available)
+ * - No Cache API: serves bundle via Flask endpoint (same URL)
+ * - js-dos: keys saves by the URL, so same URL = same saves found
+ *
+ * Local Files / Downloads:
+ * - File System Access API lets users pick .jsdos/.zip from their machine
+ * - Downloaded bundles are cached in IndexedDB + Cache API
+ * - Server download is the fallback if no local file is stored
+ *
+ * Save Persistence:
+ * - autoSave: true enables periodic saves to IndexedDB
+ * - Page refresh: js-dos auto-restores from IndexedDB with same BUNDLE_URL
+ * - No cloud sync required: all saves are local to the browser
+ * - No authentication needed: saves don't depend on login status
  */
 (function () {
     'use strict';

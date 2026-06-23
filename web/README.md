@@ -12,8 +12,8 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 |---|------|---------|
 | 🎮 | **浏览器游玩** — 无需安装，在浏览器中直接运行 DOS 游戏 | **Browser Play** — Run DOS games directly in your browser, no installation needed |
 | 📚 | **1898+ 款游戏** — 自动从 `games.json` 和 `bin/` 目录加载 | **1898+ Games** — Auto-loaded from `games.json` and `bin/` directory |
-| 👤 | **用户系统** — 注册/登录以管理游戏存档 | **User System** — Register/login to manage game saves |
-| 💾 | **云端存档** — 保存游戏进度到服务器（每用户每游戏独立存档） | **Cloud Saves** — Save game progress to server (per-user, per-game) |
+| 👤 | **用户系统** — 注册/登录以管理游戏存档（可选） | **User System** — Register/login to manage game saves (optional) |
+| 💾 | **本地存档** — 游戏进度自动保存到浏览器 IndexedDB，刷新后自动恢复 | **Local Saves** — Game progress auto-saves to browser IndexedDB, auto-restored on refresh |
 | 📤 | **上传游戏** — 拖拽上传自己的 DOS 游戏 ZIP 文件 | **Upload Games** — Drag-and-drop your own DOS game ZIP files |
 | 🔍 | **自动发现** — 后台定期扫描 `bin/` 目录，自动添加新游戏 | **Auto Discovery** — Background scanner detects new games in `bin/` |
 | 🌐 | **游戏元数据** — 从 Wikipedia 搜索游戏信息和介绍 | **Game Metadata** — Wikipedia search for game info & descriptions |
@@ -259,76 +259,84 @@ PLAY.BAT                        # 自动检测的可执行文件 · Auto-detecte
 
 ## 存档架构 · Save Architecture
 
-存档数据经过 **四层存储**，从模拟器内存到云端数据库：
+js-dos 会自动将游戏状态保存到浏览器的 IndexedDB，确保页面刷新后能自动恢复游戏进度。存档使用 **一致的 Bundle URL**，确保 js-dos 能够正确查找和加载以前的保存。
+
+js-dos automatically saves game state to the browser's IndexedDB, ensuring game progress is automatically restored after page refresh. Saves use a **consistent Bundle URL** so js-dos can correctly locate and load previous saves.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ 1. DOSBox-X 虚拟文件系统 (Emscripten MEMFS)              │
-│    游戏运行时所有文件变更在内存中                           │
-│    ↓  dosProps.save()  — 触发 FS.syncfs(false)          │
-│                                                         │
-│ 2. 浏览器 IndexedDB (Emscripten IDBFS)                   │
-│    DB 名: /home/web_user, /, 或 /emscripten_idbfs       │
-│    Store: FILE_DATA                                     │
-│    每条记录: file_path → {timestamp, mode, contents}      │
-│    ★ 页面刷新后自动恢复（同浏览器同游戏）                   │
-│    ↓  exportSaveBundle() — 遍历所有 IDB 数据库，base64 编码 │
-│                                                         │
-│ 3. JSON Save Bundle (序列化格式)                         │
-│    { v:1, game:"<id>", ts:<unix_ms>,                    │
-│      dbs: { "<dbName>": { "<storeName>": [              │
-│        {key, value: {__b: "<base64>" | ...}} ] } } }    │
-│    ↓  POST /api/games/<id>/save                         │
-│                                                         │
-│ 4. 服务器 SQLite — web/data/games.db                    │
-│    Table: user_saves                                    │
-│    Columns: user_id, game_identifier, save_data (BLOB)   │
-│    UNIQUE(user_id, game_identifier) — 每用户每游戏一个存档  │
-└─────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────┐
+│ 1. DOSBox-X 虚拟文件系统 (Emscripten MEMFS)     │
+│    游戏运行时所有文件变更在内存中                │
+│    ↓  js-dos autoSave: true                    │
+│                                                │
+│ 2. 浏览器 IndexedDB (Emscripten IDBFS)          │
+│    数据库名由 BUNDLE_URL 决定                    │
+│    Database name keyed by consistent BUNDLE_URL │
+│    /api/games/{GAME_ID}/bundle                 │
+│    ★ 页面刷新后自动恢复                         │
+│    ★ Auto-restored on page refresh             │
+│                                                │
+│ 3. 存档数据 (序列化格式)                        │
+│    Save Bundle (serialized format)             │
+│    { v:1, game:"<id>", ts:<unix_ms>, ...}      │
+└────────────────────────────────────────────────┘
 ```
 
-### 保存 · Save
+### 关键点 · Key Points
+
+- ✅ **Consistent Bundle URL**: 游戏始终使用 `/api/games/{GAME_ID}/bundle` 加载，确保 js-dos 能找到之前的存档
+  - All games always load from `/api/games/{GAME_ID}/bundle`, ensuring js-dos finds previous saves
+- ✅ **自动保存 · Auto-Save**: `autoSave: true` 使 js-dos 定期保存到 IndexedDB
+  - `autoSave: true` enables periodic auto-save to IndexedDB
+- ✅ **无需认证 · No Auth Required**: 存档完全在浏览器本地存储，不需要登录
+  - Saves are entirely local to the browser, no login required
+- ✅ **页面刷新自动恢复 · Auto-Restore on Refresh**: 刷新页面时 js-dos 自动加载之前的存档
+  - Page refresh automatically restores previous saves
+- ✅ **多设备独立 · Per-Device**: 每个浏览器/设备有独立的存档，不会同步
+  - Each browser/device has independent saves, no cloud sync
+
+### 保存流程 · Save Flow
 
 ```
-用户点击"💾 保存进度"
-  → ① dosProps.save()     — MEMFS → IndexedDB (浏览器持久化)
-  → ② exportSaveBundle()  — 扫描所有 IDB 数据库，读取 FILE_DATA
-                             二进制值转 base64 ({__b: "..."})
-  → ③ POST /api/games/<id>/save
-        Body: {"save_data": "<整个 bundle 的 base64>"}
-        → Flask 解码 base64 → SQLite user_saves.save_data BLOB
-  → 状态: "已保存 (云端 + 浏览器)"
-  
-  降级: 如果 IndexedDB 导出失败，仍显示 "已保存 (仅浏览器)"
+用户在游戏中按 Ctrl+S 或点击"💾 保存"按钮
+  → dosCI.persist() 触发 MEMFS → IndexedDB 同步
+  → 游戏状态保存到浏览器 IndexedDB
+  → 显示"已保存 ✅"
+
+User presses Ctrl+S in game or clicks "💾 Save" button
+  → dosCI.persist() triggers MEMFS → IndexedDB sync
+  → Game state saved to browser IndexedDB
+  → Shows "Saved ✅"
 ```
 
-### 加载 · Load
+### 加载流程 · Load Flow
 
 ```
-用户点击"📥 加载进度"
-  → ① GET /api/games/<id>/save  → 下载 BLOB
-  → ② blob.text() → JSON.parse → Save Bundle 对象
-  → ③ 显示保存时间，确认覆盖
-  → ④ dosProps.stop()           — 终止当前模拟器
-  → ⑤ importSaveBundle()        — 逐条写入 IDB (FILE_DATA store)
-  → ⑥ createDosPlayer()         — 重启 js-dos
-       → IDBFS 挂载 → 从 IndexedDB 恢复文件系统 → 游戏以存档状态运行
-  → 状态: "存档已恢复"
+用户刷新浏览器或重新访问游戏页面
+  → game.js 调用 createDosPlayer()
+  → 使用一致的 BUNDLE_URL
+  → js-dos 挂载 IDBFS 并从 IndexedDB 恢复文件系统
+  → 游戏自动加载到之前的存档点
+
+User refreshes browser or revisits game page
+  → game.js calls createDosPlayer()
+  → Uses consistent BUNDLE_URL
+  → js-dos mounts IDBFS and restores filesystem from IndexedDB
+  → Game automatically loads at previous save point
 ```
 
-### js-dos v8 API 对照 · API Mapping (v7 → v8)
+### js-dos v8 API 对照 · API Mapping
 
-| 操作 | v7 (旧) | v8 (新) |
-|------|---------|---------|
-| 初始化 | `Dos(el, opts)` 同步 | `Dos(el, { url, ... })` 同步返回 DosProps |
-| 加载游戏 | `await dos.run(url)` | `url` 传入 Dos() 选项 — **无 run() 方法** |
-| 事件 | `ci.events().onExit(...)` | `onEvent` 回调: `ci-ready`, `fullscreen-changed` |
-| 暂停 | `await ci.pause()` | `dosProps.setPaused(true)` |
-| 恢复 | `await ci.resume()` | `dosProps.setPaused(false)` |
-| 终止 | `await ci.exit()` | `await dosProps.stop()` |
-| 保存 | `ci.save()` + `ci.persist()` | `await dosProps.save()` |
-| 全屏 | DOM requestFullscreen | `dosProps.setFullScreen(bool)` |
-| 音量 | `ci.setVolume(n)` | `dosProps.setVolume(n)` |
+| 操作 · Operation | 说明 · Description |
+|---------|---------|
+| `Dos(el, { url, ... })` | 初始化 js-dos 播放器 · Initialize js-dos player |
+| `dosProps.setPaused(bool)` | 暂停/继续游戏 · Pause/resume game |
+| `dosProps.setFullScreen(bool)` | 全屏模式 · Toggle fullscreen |
+| `dosProps.setVolume(n)` | 设置音量 (0-1) · Set volume (0-1) |
+| `await dosProps.stop()` | 停止游戏 · Stop game |
+| `dosCI.persist()` | 同步 MEMFS → IndexedDB · Sync MEMFS to IndexedDB |
+| `onEvent: 'ci-ready'` | 游戏加载完成回调 · Game ready callback |
+| `autoSave: true` | 启用自动保存 · Enable auto-save |
 
 ---
 
