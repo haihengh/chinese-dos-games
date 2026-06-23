@@ -566,6 +566,48 @@
         document.addEventListener('fullscreenchange', () => {
             if (!document.fullscreenElement) { isFullscreen = false; updateFullscreenButton(); }
         });
+
+        suppressCloudSaveNotifications();
+    }
+
+    function suppressCloudSaveNotifications() {
+        const checkNotifications = setInterval(() => {
+            const notifications = document.querySelectorAll('[class*="notification"], [class*="toast"], [class*="message"], [class*="alert"]');
+            notifications.forEach((el) => {
+                const text = el.textContent || '';
+                if (text.includes('browser') || text.includes('login') || text.includes('cloud') || text.includes('登录')) {
+                    console.log('[game.js] Removing cloud save notification:', text.substring(0, 50));
+                    el.style.display = 'none';
+                    setTimeout(() => el.remove(), 100);
+                }
+            });
+        }, 300);
+
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === 1) {
+                        const text = node.textContent || '';
+                        if (text.includes('browser') || text.includes('login') || text.includes('cloud') || text.includes('登录')) {
+                            console.log('[game.js] MutationObserver: Removing notification');
+                            node.style.display = 'none';
+                            setTimeout(() => node.remove(), 100);
+                        }
+                    }
+                });
+            });
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: false,
+        });
+
+        window.addEventListener('beforeunload', () => {
+            clearInterval(checkNotifications);
+            observer.disconnect();
+        });
     }
 
     function toggleFullscreen() {
