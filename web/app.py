@@ -346,6 +346,72 @@ def create_app():
         result = search_metadata(identifier, game.get('name_zh', identifier))
         return jsonify(result)
 
+    # ─── API: AI Chat ───
+
+    @app.route('/api/ai/status')
+    def ai_status():
+        """Return whether AI chat is available (server or user-provided key)."""
+        return jsonify({
+            'server_configured': bool(Config.ANTHROPIC_API_KEY),
+            'server_model': Config.ANTHROPIC_MODEL,
+            'user_can_configure': True,  # Users can always bring their own key
+        })
+
+    @app.route('/api/ai/chat', methods=['POST'])
+    def ai_chat():
+        """Proxy chat messages to AI API with optional screenshot.
+
+        Accepts optional per-request overrides for user-provided API keys:
+        - api_key: user's own API key
+        - base_url: custom API base URL (for proxies/alternate providers)
+        - model: model name override
+        - provider: 'anthropic' (default) or 'openai' (OpenAI-compatible)
+        """
+        from services.ai_service import chat_with_ai
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Invalid JSON'}), 400
+
+        messages = data.get('messages', [])
+        screenshot = data.get('screenshot', None)
+
+        # Per-request AI config overrides (optional)
+        api_key = data.get('api_key', '').strip() or None
+        base_url = data.get('base_url', '').strip() or None
+        model = data.get('model', '').strip() or None
+        provider = data.get('provider', '').strip() or None
+
+        # Validate provider
+        if provider and provider not in ('anthropic', 'openai'):
+            return jsonify({'error': f'Invalid provider: {provider}'}), 400
+
+        if not messages or not isinstance(messages, list):
+            return jsonify({'error': 'No messages provided'}), 400
+
+        # Validate message format
+        for msg in messages:
+            if not isinstance(msg, dict) or 'role' not in msg or 'content' not in msg:
+                return jsonify({'error': 'Invalid message format'}), 400
+            if msg['role'] not in ('user', 'assistant'):
+                return jsonify({'error': f"Invalid role: {msg['role']}"}), 400
+
+        try:
+            result = chat_with_ai(
+                messages, screenshot,
+                api_key=api_key, base_url=base_url,
+                model=model, provider=provider,
+            )
+            if result.get('error'):
+                app.logger.warning(f"AI chat service error: {result['error']}")
+            return jsonify(result)
+        except Exception as e:
+            app.logger.error(f"AI chat error: {e}")
+            return jsonify({
+                'error': 'AI service error. Please try again later.',
+                'reply': None,
+            }), 500
+
     # ─── API: Admin ───
 
     @app.route('/api/admin/scan', methods=['POST'])

@@ -32,6 +32,10 @@ class Config:
     # Scanner
     SCAN_INTERVAL_SECONDS = 300  # 5 minutes
 
+    # AI / Chat
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+    ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514')
+
     # Pagination
     GAMES_PER_PAGE = 48
 

@@ -3,6 +3,7 @@
 
 {% block head_extra %}
 <link rel="stylesheet" href="{{ config.JSDOS_CSS }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -61,6 +62,7 @@
                 <button class="control-btn" id="btn-fullscreen" title="全屏">🖥️ 全屏</button>
                 <button class="control-btn" id="btn-pause" title="暂停/继续">⏯️ 暂停</button>
                 <button class="control-btn" id="btn-restart" title="重新开始">🔄 重启</button>
+                <button class="control-btn" id="btn-chat-toggle" title="AI 游戏助手">🤖 助手</button>
                 <button class="control-btn" id="btn-volume-down" title="减小音量">🔉</button>
                 <button class="control-btn" id="btn-volume-up" title="增加音量">🔊</button>
                 <span style="flex:1"></span>
@@ -155,10 +157,12 @@
 <script>
     window.GAME_ID = "{{ game.identifier }}";
     window.GAME_EXECUTABLE = "{{ game.executable }}";
+    window.GAME_NAME = "{{ game.name_zh }}";
 </script>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ config.JSDOS_JS }}"></script>
 <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 {% endblock %}

@@ -1,8 +1,8 @@
 # 🕹️ 中文 DOS 游戏 Web 版 · Chinese DOS Games Web Edition
 
-在浏览器中游玩中文 DOS 游戏！基于 [js-dos v8](https://js-dos.com/) 驱动，支持 DOSBox-X 后端以获得更好的中文字符显示。
+在浏览器中游玩中文 DOS 游戏！基于 [js-dos v8](https://js-dos.com/) 驱动（DOSBox-X 后端），完美支持中文显示。
 
-Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://js-dos.com/) with DOSBox-X backend for optimal Chinese character rendering.
+Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://js-dos.com/) (DOSBox-X backend) for excellent Chinese character rendering.
 
 ---
 
@@ -17,7 +17,8 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 | 📤 | **上传游戏** — 拖拽上传自己的 DOS 游戏 ZIP 文件 | **Upload Games** — Drag-and-drop your own DOS game ZIP files |
 | 🔍 | **自动发现** — 后台定期扫描 `bin/` 目录，自动添加新游戏 | **Auto Discovery** — Background scanner detects new games in `bin/` |
 | 🌐 | **游戏元数据** — 从 Wikipedia 搜索游戏信息和介绍 | **Game Metadata** — Wikipedia search for game info & descriptions |
-| 🇨🇳 | **中文支持** — UTF-8 全栈 + DOSBox-X TTF 字体渲染 | **Chinese Support** — Full-stack UTF-8 + DOSBox-X TTF font rendering |
+| 🇨🇳 | **中文支持** — UTF-8 全栈 + js-dos TTF 字体渲染 | **Chinese Support** — Full-stack UTF-8 + js-dos TTF font rendering |
+| 🤖 | **AI 游戏助手** — 内置聊天机器人 "小龙"，可看游戏画面，语音交互 | **AI Game Companion** — Built-in chatbot "Little Dragon", sees game screen, voice chat |
 
 ---
 
@@ -46,9 +47,9 @@ python app.py
 
 ### 可选：中文字体 · Optional: Chinese Font
 
-为了在 DOSBox-X 中获得最佳中文字符显示效果，推荐放置一个 CJK TTF 字体：
+为了在 js-dos 中获得最佳中文字符显示效果，推荐放置一个 CJK TTF 字体：
 
-For the best Chinese character display in DOSBox-X, place a CJK TTF font file:
+For the best Chinese character display in js-dos, place a CJK TTF font file:
 
 1. 下载 [WenQuanYi Micro Hei](https://wenq.org/) 或其他 CJK 字体<br>
    Download [WenQuanYi Micro Hei](https://wenq.org/) or another CJK font
@@ -57,9 +58,9 @@ For the best Chinese character display in DOSBox-X, place a CJK TTF font file:
 3. 重新生成游戏 bundle（删除 `jsdos_cache/` 目录后重启）<br>
    Regenerate game bundles (delete `jsdos_cache/` directory and restart)
 
-> 没有字体文件时，DOSBox-X 会使用 DBCS 位图字体作为后备方案。许多中文 DOS 游戏使用图形方式渲染文字，即使没有 TTF 字体也能正常显示。
+> 没有字体文件时，js-dos 会使用 DBCS 位图字体作为后备方案。许多中文 DOS 游戏使用图形方式渲染文字，即使没有 TTF 字体也能正常显示。
 >
-> Without a TTF font, DOSBox-X falls back to DBCS bitmap rendering. Many Chinese DOS games render text graphically, so they display correctly even without a TTF font.
+> Without a TTF font, js-dos falls back to DBCS bitmap rendering. Many Chinese DOS games render text graphically, so they display correctly even without a TTF font.
 
 ---
 
@@ -82,11 +83,12 @@ web/
 │   ├── save_service.py          #   存档管理 · Save state management
 │   ├── upload_service.py        #   上传处理 · Upload processing
 │   ├── scanner_service.py       #   后台扫描 · Background scanner
-│   └── metadata_service.py      #   Wikipedia 搜索 · Wikipedia metadata search
+│   ├── metadata_service.py      #   Wikipedia 搜索 · Wikipedia metadata search
+│   └── ai_service.py            #   AI 聊天代理 · AI chat proxy (Anthropic + OpenAI-compatible)
 │
 ├── shared/                      # 公共工具 · Shared utilities
 │   ├── game_util.py             #   ZIP 检查/可执行文件检测 · ZIP inspection / executable detection
-│   └── dosbox_conf.py           #   DOSBox 配置生成 · DOSBox config generation
+│   └── dosbox_conf.py           #   js-dos 配置生成 · js-dos config generation
 │
 ├── templates/                   # Jinja2 HTML 模板 · Jinja2 HTML templates
 │   ├── base.html                #   布局框架 · Layout shell (navbar, footer)
@@ -100,10 +102,13 @@ web/
 │   └── 404.html                 #   错误页 · Error page
 │
 ├── static/                      # 静态资源 · Static assets
-│   ├── css/main.css             #   主样式 · Main stylesheet (dark theme)
+│   ├── css/
+│   │   ├── main.css             #   主样式 · Main stylesheet (dark theme)
+│   │   └── chat.css             #   AI 聊天面板样式 · AI chat panel styles
 │   ├── js/
 │   │   ├── app.js               #   全局脚本 · Global (auth state, nav, toasts)
 │   │   ├── game.js              #   js-dos 播放器 · js-dos player integration
+│   │   ├── chat.js              #   AI 聊天前端 · AI chat frontend (voice, screenshot, settings)
 │   │   ├── auth.js              #   登录/注册 · Login/register forms
 │   │   └── upload.js            #   上传 · Drag-and-drop upload
 │   └── img/no-cover.png         #   默认封面 · Placeholder cover
@@ -142,6 +147,8 @@ web/
 | `GET /api/games/<id>/bundle` | .jsdos 游戏包（动态生成）· .jsdos bundle (generated on-the-fly) |
 | `GET /api/games/types` | 游戏类型及数量 · Game types with counts |
 | `GET /api/metadata/<id>` | Wikipedia 元数据 · Wikipedia metadata |
+| `GET /api/ai/status` | AI 服务状态 · AI service status |
+| `POST /api/ai/chat` | AI 聊天（支持截屏）· AI chat (with screenshot) |
 
 ### 需要登录 · Auth Required
 
@@ -194,9 +201,9 @@ Bundle 端点 (bundle_service.py):
 
 js-dos v8 接收 bundle:
   → 解压到虚拟文件系统 (Emscripten MEMFS)
-  → 读取 .jsdos/dosbox.conf
+  → 读取 .jsdos/dosbox.conf (DOSBox-X 配置)
   → 挂载 IDBFS 持久化层 (如果存在历史存档则自动恢复)
-  → DOSBox-X 启动 → autoexec 运行游戏主程序
+  → js-dos 启动模拟器 → autoexec 运行游戏主程序
   → 游戏渲染在 <canvas> 上
   → onEvent('ci-ready') 触发 → 隐藏加载遮罩 → 游戏可操作
 ```
@@ -215,16 +222,16 @@ Bundle endpoint (bundle_service.py):
 
 js-dos v8 receives bundle:
   → Unpacks to virtual filesystem (Emscripten MEMFS)
-  → Reads .jsdos/dosbox.conf
+  → Reads .jsdos/dosbox.conf (DOSBox-X backend config)
   → Mounts IDBFS persistence layer (auto-restores if prior save exists)
-  → DOSBox-X boots → autoexec launches game executable
+  → js-dos boots emulator → autoexec launches game executable
   → Game renders on <canvas>
   → onEvent('ci-ready') fires → hides loading overlay → game is playable
 ```
 
 ---
 
-## DOSBox 配置模板 · DOSBox Config Template
+## js-dos 配置模板 (DOSBox-X) · js-dos Config Template (DOSBox-X)
 
 ```ini
 [sdl]
@@ -265,7 +272,7 @@ js-dos automatically saves game state to the browser's IndexedDB, ensuring game 
 
 ```
 ┌────────────────────────────────────────────────┐
-│ 1. DOSBox-X 虚拟文件系统 (Emscripten MEMFS)     │
+│ 1. js-dos 虚拟文件系统 (Emscripten MEMFS)     │
 │    游戏运行时所有文件变更在内存中                │
 │    ↓  js-dos autoSave: true                    │
 │                                                │
@@ -340,6 +347,77 @@ User refreshes browser or revisits game page
 
 ---
 
+## AI 游戏助手 · AI Game Companion
+
+游戏页面内置 AI 聊天助手 **"小龙" (Little Dragon)**，可以看见你的游戏画面并提供实时帮助。
+
+The game page includes an AI chat companion **"Little Dragon"** that sees your game screen and provides real-time help.
+
+### 功能 · Features
+
+| 功能 · Feature | 说明 · Description |
+|---------------|-------------------|
+| 🖼️ **游戏截屏** | 自动捕获 DOS 游戏画面 (canvas → JPEG)，随消息一起发送给 AI · Auto-captures game screen, sends with messages |
+| 🎤 **语音输入** | 浏览器语音识别 (Web Speech API)，支持中文 · Browser speech recognition (Chinese) |
+| 🔊 **语音播报** | AI 回复自动朗读 (TTS)，支持中文语音 · AI responses read aloud with Chinese voices |
+| ⚙️ **自定义 AI** | 支持自备 API 密钥，兼容 Anthropic 和 OpenAI 接口 · Bring your own API key, Anthropic & OpenAI-compatible |
+| 💬 **对话记忆** | 对话历史保存在浏览器 localStorage，刷新不丢失 · Chat history persisted in localStorage |
+| 📐 **可调面板** | 左侧固定面板，可拖拽调整宽度 (280-480px)，不缩游戏画面 · Left-side fixed panel, resizable, doesn't shrink game |
+
+### 配置 · Configuration
+
+**方式一：服务器密钥（管理员配置）· Server Key (admin configured)**
+
+```bash
+# 设置环境变量 · Set environment variable
+export ANTHROPIC_API_KEY="sk-ant-..."    # Linux/Mac
+$env:ANTHROPIC_API_KEY = "sk-ant-..."    # PowerShell
+```
+
+**方式二：自备密钥（用户配置）· User Key (self-configured)**
+
+1. 打开任意游戏页面
+2. 点击 "🤖 助手" 按钮打开聊天面板
+3. 点击聊天面板顶部的 "⚙️" 设置按钮
+4. 填写：
+   - **AI 提供商**: Anthropic (Claude) 或 OpenAI 兼容
+   - **API 密钥**: 你的 API 密钥
+   - **模型名称**: 如 `claude-sonnet-4-20250514` 或 `gpt-4o`
+   - **API 地址**: (OpenAI 模式可选) 自定义端点 URL
+5. 点击保存
+
+用户密钥保存在浏览器 localStorage，仅随聊天请求发送。
+
+User keys are stored in browser localStorage, only sent with chat requests.
+
+### 工作流程 · How It Works
+
+```
+用户发送消息 (文本 / 语音)
+  → chat.js: captureScreenshot() → canvas.toDataURL('image/jpeg', 0.6)
+  → POST /api/ai/chat {
+      messages: [...history],
+      screenshot: "base64...",
+      api_key: "sk-...",      // 可选 · Optional
+      provider: "anthropic",   // 可选 · Optional
+      model: "claude-...",     // 可选 · Optional
+    }
+  → ai_service.py: 解析配置 → 调用 AI API
+  → AI 回复 → 渲染消息气泡 → [可选: TTS 语音播报]
+  → 对话历史保存到 localStorage
+```
+
+### AI 系统提示 · System Prompt
+
+小龙被设定为一位熟悉 1980-90 年代中文 DOS 游戏的 AI 助手：
+- 默认使用简体中文回复
+- 保持回复简洁 (2-4 段)
+- 除非明确要求，否则只给提示不剧透
+- 能够分析游戏截屏中的文字、UI 和游戏状态
+- 了解各种游戏类型的常见谜题和策略
+
+---
+
 ## 上传流程 · Upload Flow
 
 ```
@@ -399,9 +477,11 @@ Server processing:
 | 前端 · Frontend | Vanilla HTML/CSS/JS (zero build step) |
 | CSS 框架 · CSS | Custom dark theme + CSS Grid/Flexbox |
 | 字体 · Font | Noto Sans SC (Google Fonts) |
-| DOS 模拟 · DOS Emulation | [js-dos v8](https://js-dos.com/) via jsDelivr CDN |
-| DOSBox 后端 · DOSBox Backend | DOSBox-X (CJK TTF + DBCS support) |
+| DOS 模拟 · DOS Emulation | [js-dos v8](https://js-dos.com/) (DOSBox-X backend) via jsDelivr CDN |
+| 后端引擎 · Backend Engine | DOSBox-X (CJK TTF + DBCS) — internal, managed by js-dos |
 | 元数据 · Metadata | Wikipedia API |
+| AI 聊天 · AI Chat | Anthropic Claude API + OpenAI-compatible (vision) |
+| 语音 · Voice | Web Speech API (SpeechRecognition + SpeechSynthesis) |
 | 运行环境 · Runtime | Python 3.10+ |
 
 ---

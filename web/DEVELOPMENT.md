@@ -78,11 +78,25 @@ python app.py
   - Responsive layout
   - CSS Grid/Flexbox
 
+- **`css/chat.css`** — AI chat panel styles
+  - Fixed left overlay panel (360px, resizable)
+  - Message bubbles, typing indicator, settings form
+  - Mic permission help panel, TTS speaking animation
+
+- **`js/chat.js`** — AI chat frontend
+  - Chat panel DOM + settings panel
+  - Canvas screenshot capture (JPEG base64)
+  - Voice input (Web Speech API) with permission handling
+  - Voice output (SpeechSynthesis) with Chinese voice selection
+  - localStorage persistence per game (history + AI settings)
+  - Resizable panel (280-480px)
+  - API calls to `/api/ai/chat`
+
 ### Backend (`services/`)
 
 - **`bundle_service.py`** — Game bundle creation
   - ZIP inspection and extraction
-  - DOSBox config injection
+  - js-dos config injection (.jsdos/dosbox.conf)
   - Font embedding
   - Cache management
 
@@ -109,6 +123,12 @@ python app.py
 - **`metadata_service.py`** — Wikipedia integration
   - Game information lookup
   - Metadata caching
+
+- **`ai_service.py`** — AI chat proxy
+  - Anthropic Claude API (native SDK) + OpenAI-compatible (HTTP REST)
+  - Supports per-request API key/base URL/model overrides
+  - System prompt: "小龙" game companion persona
+  - Error mapping: auth errors, rate limits, token limits → user-friendly messages
 
 ## Save Architecture (Critical!)
 
@@ -226,6 +246,30 @@ console.log('[game.js] message');
 debugger;  // Breakpoint
 ```
 
+### AI Chat Architecture
+
+The AI chat feature uses a **server-side proxy** pattern:
+
+```
+Browser (chat.js)
+  → POST /api/ai/chat { messages, screenshot?, api_key?, provider?, model?, base_url? }
+    → ai_service.py: chat_with_ai()
+      → Anthropic SDK (native) or OpenAI REST API
+    ← { reply, usage?, error? }
+  ← Render message bubble + optional TTS
+```
+
+**Why server-side proxy?**
+- Server can provide a default API key (set by admin)
+- Users can override with their own key (stored in browser localStorage)
+- API key never leaks to other users
+- Single endpoint for both Anthropic and OpenAI-compatible providers
+
+**Adding a new provider:**
+1. Add provider handling in `ai_service.py` — create a `_call_PROVIDERNAME()` function
+2. Update `_resolve_config()` to handle the new provider string
+3. The frontend settings dropdown auto-populates from the provider list
+
 ### Adding a New Service
 
 1. Create `services/new_service.py`
@@ -277,6 +321,20 @@ def api_new():
 - Ensure ZIP contains valid executable
 - Verify write permissions on `bin/` and `img/` directories
 
+### AI Chat Not Working
+
+- Check that either `ANTHROPIC_API_KEY` env var is set, or user has configured their own key in settings
+- The `/api/ai/status` endpoint shows whether the server key is configured
+- Verify the AI provider API is accessible from the server (firewall, network)
+- Check browser console for fetch errors to `/api/ai/chat`
+
+### Voice Input Not Working
+
+- **HTTPS required**: Browsers require HTTPS (or localhost) for microphone access
+- Check `window.isSecureContext` in browser console — must be `true`
+- If permission was previously denied, user must go to browser site settings to re-enable
+- The chat panel shows an inline help card with step-by-step instructions when permission fails
+
 ## Code Style Guidelines
 
 ### Python
@@ -310,7 +368,8 @@ See main `README.md` for deployment instructions. Key points:
 
 - Use production-grade WSGI server (gunicorn, uWSGI)
 - Set `SECRET_KEY` and `JWT_SECRET` environment variables
-- Configure proper HTTPS/SSL
+- Set `ANTHROPIC_API_KEY` environment variable (optional — users can bring their own keys)
+- Configure proper HTTPS/SSL (required for voice input)
 - Set up database backups
 - Configure reverse proxy (nginx)
 
@@ -327,7 +386,7 @@ For game contributions, see the main `CONTRIBUTING.md` in the repository root.
 ## Resources
 
 - [Flask Documentation](https://flask.palletsprojects.com/)
-- [js-dos v8](https://js-dos.com/)
-- [DOSBox-X](https://dosbox-x.com/)
+- [js-dos v8](https://js-dos.com/) (DOS emulation wrapper)
+- [DOSBox-X](https://dosbox-x.com/) (internal backend used by js-dos)
 - [SQLite Documentation](https://www.sqlite.org/)
 - [PyJWT](https://pyjwt.readthedocs.io/)
