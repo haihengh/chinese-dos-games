@@ -31,6 +31,7 @@
     let isFullscreen = false;
     let volume = 1.0;
     let bundleBlobUrl = null;  // Track Blob URL for cleanup
+    let lastGoodScreenshot = null;  // Fallback: last successful screenshot
 
     const GAME_ID = window.GAME_ID;
     const BUNDLE_URL = `/api/games/${encodeURIComponent(GAME_ID)}/bundle`;
@@ -740,4 +741,111 @@
     window.actionPickLocalFile = actionPickLocalFile;
     window.actionDownloadFromServer = actionDownloadFromServer;
     window.actionClearLocalFile = actionClearLocalFile;
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Screenshot API (exposed for chat.js AI vision feature)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Capture a screenshot of the current game screen.
+     *
+     * Uses js-dos's native ci.screenshot() which properly reads the WebGL
+     * drawing buffer (unlike canvas.toDataURL() which returns black for
+     * WebGL canvases with preserveDrawingBuffer=false).
+     *
+     * Falls back to direct canvas read, then to the last good screenshot.
+     *
+     * @returns {Promise<string|null>} Base64-encoded JPEG, or null on failure
+     */
+    async function captureGameScreenshot() {
+        // ── Method 1: js-dos native ci.screenshot() ──
+        if (dosCI && typeof dosCI.screenshot === 'function') {
+            try {
+                const result = await dosCI.screenshot();
+                if (result) {
+                    // ci.screenshot() may return ImageData, a data URL, or a canvas
+                    let dataUrl;
+                    if (typeof result === 'string') {
+                        // Already a data URL
+                        dataUrl = result;
+                    } else if (result instanceof ImageData) {
+                        // Convert ImageData to data URL via an offscreen canvas
+                        const c = document.createElement('canvas');
+                        c.width = result.width;
+                        c.height = result.height;
+                        const ctx = c.getContext('2d');
+                        ctx.putImageData(result, 0, 0);
+                        dataUrl = c.toDataURL('image/jpeg', 0.7);
+                    } else if (result instanceof HTMLCanvasElement) {
+                        dataUrl = result.toDataURL('image/jpeg', 0.7);
+                    } else if (result && result.data && result.width) {
+                        // ImageData-like object
+                        const c = document.createElement('canvas');
+                        c.width = result.width;
+                        c.height = result.height;
+                        const ctx = c.getContext('2d');
+                        ctx.putImageData(new ImageData(
+                            new Uint8ClampedArray(result.data),
+                            result.width,
+                            result.height
+                        ), 0, 0);
+                        dataUrl = c.toDataURL('image/jpeg', 0.7);
+                    }
+
+                    if (dataUrl && dataUrl.startsWith('data:image/')) {
+                        const base64 = dataUrl.split(',')[1];
+                        if (base64 && base64.length > 500) {
+                            console.log('[game.js] Screenshot OK via ci.screenshot(), size:', base64.length);
+                            lastGoodScreenshot = base64;
+                            return base64;
+                        }
+                    }
+                }
+                console.warn('[game.js] ci.screenshot() returned empty/black result, trying fallback...');
+            } catch (e) {
+                console.warn('[game.js] ci.screenshot() failed:', e.message, ', trying fallback...');
+            }
+        }
+
+        // ── Method 2: Direct canvas read ──
+        // Find the actual rendering canvas (js-dos may create multiple canvases)
+        const container = document.getElementById('dos-container');
+        if (container) {
+            const canvases = container.querySelectorAll('canvas');
+            // Try each canvas, pick the one with non-trivial content
+            for (const canvas of canvases) {
+                try {
+                    if (canvas.width < 16 || canvas.height < 16) continue;
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                    const base64 = dataUrl.split(',')[1];
+                    if (base64 && base64.length > 500) {
+                        // Check if this is likely a black/blank image
+                        // A truly blank JPEG is typically <300 bytes
+                        console.log('[game.js] Screenshot OK via canvas.toDataURL(), size:', base64.length, 'canvas:', canvas.width + 'x' + canvas.height);
+                        lastGoodScreenshot = base64;
+                        return base64;
+                    }
+                } catch (e) {
+                    // Tainted canvas or other error — skip this canvas
+                    continue;
+                }
+            }
+        }
+
+        // ── Method 3: Fallback to last good screenshot ──
+        if (lastGoodScreenshot) {
+            console.log('[game.js] Returning cached last good screenshot, size:', lastGoodScreenshot.length);
+            return lastGoodScreenshot;
+        }
+
+        console.warn('[game.js] All screenshot methods failed');
+        return null;
+    }
+
+    // Expose on global namespace
+    window.DOS = window.DOS || {};
+    window.DOS.Game = {
+        captureScreenshot: captureGameScreenshot,
+        get dosCI() { return dosCI; },
+    };
 })();

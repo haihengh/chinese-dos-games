@@ -529,24 +529,73 @@
     //  Screenshot Capture
     // ═══════════════════════════════════════════════════════════
 
-    function captureScreenshot() {
-        const canvas = document.querySelector('#dos-container canvas');
-        if (!canvas) return null;
-        try {
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-            const base64 = dataUrl.split(',')[1];
-            if (base64 && base64.length > 500) {
-                return base64;
+    /**
+     * Capture a screenshot of the current game screen.
+     *
+     * Primary: Uses js-dos native ci.screenshot() via window.DOS.Game.captureScreenshot()
+     *   which properly reads the WebGL drawing buffer (canvas.toDataURL() returns
+     *   black for WebGL canvases with preserveDrawingBuffer=false).
+     * Fallback: Direct canvas read, scanning all canvases in dos-container.
+     *
+     * @returns {Promise<string|null>} Base64-encoded JPEG data, or null on failure
+     */
+    async function captureScreenshot() {
+        // ── Method 1: js-dos native API (handles WebGL properly) ──
+        if (window.DOS && window.DOS.Game && window.DOS.Game.captureScreenshot) {
+            try {
+                const result = await window.DOS.Game.captureScreenshot();
+                if (result) {
+                    return result;
+                }
+                console.warn('[chat.js] DOS.Game.captureScreenshot returned null, trying fallback...');
+            } catch (e) {
+                console.warn('[chat.js] DOS.Game.captureScreenshot failed:', e.message, ', trying fallback...');
             }
-            return null;
-        } catch (e) {
-            console.warn('[chat.js] Screenshot capture failed:', e.message);
-            return null;
         }
+
+        // ── Method 2: Direct canvas read (scan all canvases) ──
+        const container = document.getElementById('dos-container');
+        if (container) {
+            const canvases = container.querySelectorAll('canvas');
+            for (const canvas of canvases) {
+                try {
+                    if (canvas.width < 16 || canvas.height < 16) continue;
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                    const base64 = dataUrl.split(',')[1];
+                    if (base64 && base64.length > 500) {
+                        console.log('[chat.js] Screenshot OK via canvas fallback, size:', base64.length,
+                                    'canvas:', canvas.width + 'x' + canvas.height,
+                                    'context:', canvas.getContext('webgl') ? 'webgl' : (canvas.getContext('2d') ? '2d' : 'unknown'));
+                        return base64;
+                    }
+                } catch (e) {
+                    // Tainted canvas or other error — skip this canvas
+                    continue;
+                }
+            }
+        }
+
+        // ── Method 3: Single canvas querySelector fallback (original behavior) ──
+        const canvas = document.querySelector('#dos-container canvas');
+        if (canvas && canvas.width >= 16 && canvas.height >= 16) {
+            try {
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                const base64 = dataUrl.split(',')[1];
+                if (base64 && base64.length > 500) {
+                    console.log('[chat.js] Screenshot OK via single-canvas fallback, size:', base64.length);
+                    return base64;
+                }
+            } catch (e) {
+                console.warn('[chat.js] Single-canvas fallback failed:', e.message);
+            }
+        }
+
+        console.warn('[chat.js] All screenshot methods failed');
+        return null;
     }
 
     async function captureAndAttach() {
-        const ss = captureScreenshot();
+        const ss = await captureScreenshot();
         if (ss) {
             state.lastScreenshot = ss;
             els.ssBtn.classList.add('screenshot-attached');
@@ -567,8 +616,10 @@
         if (_autoSsInterval) return;
         _autoSsInterval = setInterval(() => {
             if (state.isOpen && !state.isWaiting) {
-                const ss = captureScreenshot();
-                if (ss) state.lastScreenshot = ss;
+                (async () => {
+                    const ss = await captureScreenshot();
+                    if (ss) state.lastScreenshot = ss;
+                })();
             }
         }, 30000);
     }
@@ -608,7 +659,7 @@
         const trimmed = text.trim().substring(0, MAX_MESSAGE_LENGTH);
         if (!trimmed) return;
 
-        const screenshot = state.lastScreenshot || captureScreenshot();
+        const screenshot = state.lastScreenshot || await captureScreenshot();
         state.lastScreenshot = null;
         els.ssBtn.classList.remove('screenshot-attached');
 
