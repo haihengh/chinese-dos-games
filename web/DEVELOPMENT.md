@@ -406,7 +406,7 @@ export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://raw.githubusercontent.com/
 
 ### Docker (recommended for users)
 ```bash
-docker run -d -p 5000:5000 -v dos-games-bin:/app/bin rwv/chinese-dos-games:latest
+docker run -d -p 5000:5000 -v dos-games-bin:/app/bin haihengh/chinese-dos-games:latest
 ```
 
 ### Native launchers

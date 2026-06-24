@@ -77,7 +77,7 @@ if command -v gh &>/dev/null; then
     echo "    https://github.com/haihengh/chinese-dos-games/releases"
 else
     echo "  ⚠ gh CLI not found. Create release manually:"
-    echo "    https://github.com/rwv/chinese-dos-games/releases/new?tag=$TAG"
+    echo "    https://github.com/haihengh/chinese-dos-games/releases/new?tag=$TAG"
 fi
 
 echo ""

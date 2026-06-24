@@ -4,7 +4,7 @@ This document describes how to create and publish a new release of Chinese DOS G
 
 ## Prerequisites
 
-- Docker + Docker Hub account with `rwv/chinese-dos-games` repository created
+- Docker + Docker Hub account with `haihengh/chinese-dos-games` repository created
 - GitHub repo with write access and `GHCR` enabled (Settings → Packages)
 - GitHub CLI (`gh`) installed and authenticated (`gh auth login`)
 - Git tags pushed to origin
@@ -63,17 +63,17 @@ docker buildx create --name multiarch --use
 # Build + push
 docker buildx build \
     --platform linux/amd64,linux/arm64 \
-    --tag ghcr.io/rwv/chinese-dos-games:latest \
-    --tag ghcr.io/rwv/chinese-dos-games:v1.0.0 \
-    --tag rwv/chinese-dos-games:latest \
-    --tag rwv/chinese-dos-games:v1.0.0 \
+    --tag ghcr.io/haihengh/chinese-dos-games:latest \
+    --tag ghcr.io/haihengh/chinese-dos-games:v1.0.0 \
+    --tag haihengh/chinese-dos-games:latest \
+    --tag haihengh/chinese-dos-games:v1.0.0 \
     --push \
     .
 ```
 
 ### 3. Create GitHub Release
 
-Go to: https://github.com/rwv/chinese-dos-games/releases/new
+Go to: https://github.com/haihengh/chinese-dos-games/releases/new
 
 - Tag: `v1.0.0`
 - Title: `v1.0.0 — <brief description>`
@@ -83,15 +83,15 @@ Go to: https://github.com/rwv/chinese-dos-games/releases/new
 ### 4. Update Docker Hub description
 
 ```bash
-docker pushrm rwv/chinese-dos-games
+docker pushrm haihengh/chinese-dos-games
 ```
 
 ## Docker Repositories
 
 | Registry | Image |
 |----------|-------|
-| Docker Hub | `rwv/chinese-dos-games` |
-| GitHub Container Registry | `ghcr.io/rwv/chinese-dos-games` |
+| Docker Hub | `haihengh/chinese-dos-games` |
+| GitHub Container Registry | `ghcr.io/haihengh/chinese-dos-games` |
 
 ## User Installation Commands
 
@@ -103,10 +103,10 @@ docker run -d -p 5000:5000 \
     -v dos-games-cache:/app/web/jsdos_cache \
     -e ANTHROPIC_API_KEY=sk-ant-... \
     --name dos-games \
-    rwv/chinese-dos-games:latest
+    haihengh/chinese-dos-games:latest
 
 # Or with docker-compose
-curl -O https://raw.githubusercontent.com/rwv/chinese-dos-games/master/docker-compose.yml
+curl -O https://raw.githubusercontent.com/haihengh/chinese-dos-games/master/docker-compose.yml
 docker compose up -d
 ```
 
@@ -134,10 +134,10 @@ chmod +x start.sh
 ## Post-Release Checklist
 
 - [ ] Docker Hub: verify `latest` and `vX.Y.Z` tags are listed
-- [ ] GHCR: verify packages at `https://github.com/rwv/chinese-dos-games/pkgs/container/chinese-dos-games`
-- [ ] GitHub Release: publish the draft at `https://github.com/rwv/chinese-dos-games/releases`
-- [ ] Test pull: `docker pull rwv/chinese-dos-games:latest`
-- [ ] Test run: `docker run --rm -p 5000:5000 rwv/chinese-dos-games:latest`
+- [ ] GHCR: verify packages at `https://github.com/haihengh/chinese-dos-games/pkgs/container/chinese-dos-games`
+- [ ] GitHub Release: publish the draft at `https://github.com/haihengh/chinese-dos-games/releases`
+- [ ] Test pull: `docker pull haihengh/chinese-dos-games:latest`
+- [ ] Test run: `docker run --rm -p 5000:5000 haihengh/chinese-dos-games:latest`
 - [ ] Test game-on-demand: open browser, click any game, verify auto-download
 - [ ] Update `dos.lol` deployment (if applicable)
 
@@ -147,7 +147,7 @@ Set `GAME_DOWNLOAD_BASE` to a China-accessible mirror:
 
 ```bash
 # Option 1: GitHub proxy
-export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://raw.githubusercontent.com/rwv/chinese-dos-games/refs/heads/master/bin/
+export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://raw.githubusercontent.com/haihengh/chinese-dos-games/refs/heads/master/bin/
 
 # Option 2: Self-hosted
 export GAME_DOWNLOAD_BASE=https://my-cdn.example.com/games/

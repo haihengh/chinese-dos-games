@@ -42,7 +42,7 @@
 
 ### Docker（推荐）
 ```bash
-docker run -d -p 5000:5000 -v dos-games-bin:/app/bin rwv/chinese-dos-games:latest
+docker run -d -p 5000:5000 -v dos-games-bin:/app/bin haihengh/chinese-dos-games:latest
 # 打开 https://localhost:5000，游戏自动按需下载
 ```
 

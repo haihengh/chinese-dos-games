@@ -34,10 +34,10 @@ docker run -d -p 5000:5000 \
     -v dos-games-cache:/app/web/jsdos_cache \
     -e ANTHROPIC_API_KEY=sk-ant-... \
     --name dos-games \
-    rwv/chinese-dos-games:latest
+    haihengh/chinese-dos-games:latest
 
 # 或使用 docker-compose
-curl -O https://raw.githubusercontent.com/rwv/chinese-dos-games/master/docker-compose.yml
+curl -O https://raw.githubusercontent.com/haihengh/chinese-dos-games/master/docker-compose.yml
 docker compose up -d
 ```
 
