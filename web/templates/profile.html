@@ -4,13 +4,42 @@
 {% block content %}
 <div class="profile-page">
     <div class="profile-card">
-        <h1 class="profile-title">个人中心</h1>
-        <div class="profile-info" id="profile-info">
+        <h1 class="profile-title">🐱 个人中心</h1>
+
+        <!-- User Info -->
+        <div class="profile-section" id="profile-info">
             <p>加载中...</p>
         </div>
-        <div class="profile-saves" id="profile-saves" style="display:none;">
-            <h2>我的游戏存档</h2>
+
+        <!-- Stats Grid -->
+        <div class="profile-stats-grid" id="profile-stats" style="display:none;">
+            <div class="profile-stat-card">
+                <div class="profile-stat-icon">💾</div>
+                <div class="profile-stat-value" id="stat-saves">0</div>
+                <div class="profile-stat-label">游戏存档</div>
+            </div>
+            <div class="profile-stat-card">
+                <div class="profile-stat-icon">📤</div>
+                <div class="profile-stat-value" id="stat-uploads">0</div>
+                <div class="profile-stat-label">上传游戏</div>
+            </div>
+            <div class="profile-stat-card">
+                <div class="profile-stat-icon">📦</div>
+                <div class="profile-stat-value" id="stat-size">0 KB</div>
+                <div class="profile-stat-label">存档大小</div>
+            </div>
+        </div>
+
+        <!-- Saved Games -->
+        <div class="profile-section" id="profile-saves" style="display:none;">
+            <h2 class="profile-section-title">💾 我的游戏存档</h2>
             <div id="saves-list"></div>
+        </div>
+
+        <!-- Uploads -->
+        <div class="profile-section" id="profile-uploads" style="display:none;">
+            <h2 class="profile-section-title">📤 我的上传</h2>
+            <div id="uploads-list"></div>
         </div>
     </div>
 </div>
@@ -25,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Fetch user info
     fetch('/api/auth/me', {
         headers: { 'Authorization': 'Bearer ' + token }
     })
@@ -33,17 +61,97 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!r.ok) { localStorage.removeItem('dos_token'); window.location.href = '/login'; return; }
         return r.json();
     })
-    .then(user => {
-        if (!user) return;
-        document.getElementById('profile-info').innerHTML = `
-            <p><strong>用户名:</strong> ${escapeHtml(user.username)}</p>
-            <p><strong>注册时间:</strong> ${user.created_at || '未知'}</p>
-        `;
+    .then(data => {
+        if (!data) return;
+        renderProfile(data);
     })
     .catch(() => {
-        document.getElementById('profile-info').innerHTML = '<p>加载失败，请重新登录</p>';
+        document.getElementById('profile-info').innerHTML = '<p style="color:var(--danger)">加载失败，请重新登录</p>';
     });
 });
+
+function renderProfile(data) {
+    // ── User Info ──
+    const created = data.created_at ? new Date(data.created_at).toLocaleDateString('zh-CN', {
+        year: 'numeric', month: 'long', day: 'numeric'
+    }) : '未知';
+
+    document.getElementById('profile-info').innerHTML = `
+        <div class="profile-user-row">
+            <div class="profile-avatar">🐱</div>
+            <div class="profile-user-meta">
+                <div class="profile-username">${escapeHtml(data.username)}</div>
+                <div class="profile-joined">📅 加入于 ${created}</div>
+                ${data.is_admin ? '<span class="profile-badge profile-badge-admin">管理员</span>' : ''}
+            </div>
+        </div>
+    `;
+
+    // ── Stats ──
+    const stats = data.stats || {};
+    document.getElementById('stat-saves').textContent = stats.save_count || 0;
+    document.getElementById('stat-uploads').textContent = stats.upload_count || 0;
+    document.getElementById('stat-size').textContent = formatSize(stats.total_save_size || 0);
+    document.getElementById('profile-stats').style.display = '';
+
+    // ── Saved Games ──
+    const saves = data.saves || [];
+    if (saves.length > 0) {
+        document.getElementById('profile-saves').style.display = '';
+        document.getElementById('saves-list').innerHTML = saves.map(s => `
+            <a href="/games/${encodeURIComponent(s.game_identifier)}" class="profile-item">
+                <span class="profile-item-icon">🎮</span>
+                <span class="profile-item-name">${escapeHtml(s.name)}</span>
+                <span class="profile-item-meta">${formatSize(s.filesize)} · ${formatDate(s.updated_at)}</span>
+                <span class="profile-item-arrow">→</span>
+            </a>
+        `).join('');
+    }
+
+    // ── Uploads ──
+    const uploads = data.uploads || [];
+    if (uploads.length > 0) {
+        document.getElementById('profile-uploads').style.display = '';
+        document.getElementById('uploads-list').innerHTML = uploads.map(u => `
+            <div class="profile-item">
+                <span class="profile-item-icon">📤</span>
+                <span class="profile-item-name">${escapeHtml(u.filename || u.identifier || '未知')}</span>
+                <span class="profile-item-meta">
+                    <span class="upload-status upload-status--${u.status}">${statusLabel(u.status)}</span>
+                    · ${formatSize(u.filesize)} · ${formatDate(u.created_at)}
+                </span>
+                ${u.status === 'completed' ? `<a href="/games/${encodeURIComponent(u.identifier)}" class="profile-item-arrow">→</a>` : ''}
+            </div>
+        `).join('');
+    }
+}
+
+function formatSize(bytes) {
+    if (!bytes || bytes === 0) return '0 KB';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(2) + ' MB';
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diff = now - d;
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    if (mins < 1) return '刚刚';
+    if (mins < 60) return mins + ' 分钟前';
+    if (hours < 24) return hours + ' 小时前';
+    if (days < 30) return days + ' 天前';
+    return d.toLocaleDateString('zh-CN');
+}
+
+function statusLabel(status) {
+    const map = { completed: '已完成', processing: '处理中', failed: '失败' };
+    return map[status] || status;
+}
 
 function escapeHtml(text) {
     const div = document.createElement('div');

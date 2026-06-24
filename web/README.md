@@ -18,7 +18,7 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 | 🔍 | **自动发现** — 后台定期扫描 `bin/` 目录，自动添加新游戏 | **Auto Discovery** — Background scanner detects new games in `bin/` |
 | 🌐 | **游戏元数据** — 从 Wikipedia 搜索游戏信息和介绍 | **Game Metadata** — Wikipedia search for game info & descriptions |
 | 🇨🇳 | **中文支持** — UTF-8 全栈 + js-dos TTF 字体渲染 | **Chinese Support** — Full-stack UTF-8 + js-dos TTF font rendering |
-| 🤖 | **AI 游戏助手** — 内置聊天机器人 "小龙"，可看游戏画面，语音交互，面板可固定 | **AI Game Companion** — Built-in chatbot "Little Dragon", sees game screen, voice chat, pinnable panel |
+| 🤖 | **AI 游戏助手** — 内置聊天机器人 "Wawa"，可看游戏画面，语音交互，面板可固定 | **AI Game Companion** — Built-in chatbot "Wawa", sees game screen, voice chat, pinnable panel |
 
 ---
 
@@ -153,6 +153,7 @@ web/
 | `GET /api/metadata/<id>` | Wikipedia 元数据 · Wikipedia metadata |
 | `GET /api/ai/status` | AI 服务状态 · AI service status |
 | `POST /api/ai/chat` | AI 聊天（支持截屏）· AI chat (with screenshot) |
+| `POST /api/tts` | 文字转语音 (Edge TTS 神经网络) · Text-to-speech (Edge TTS) |
 
 ### 需要登录 · Auth Required
 
@@ -354,21 +355,24 @@ User refreshes browser or revisits game page
 
 ## AI 游戏助手 · AI Game Companion
 
-游戏页面内置 AI 聊天助手 **"小龙" (Little Dragon)**，可以看见你的游戏画面并提供实时帮助。
+游戏页面内置 AI 聊天助手 **"Wawa"**，可以看见你的游戏画面并提供实时帮助。
 
-The game page includes an AI chat companion **"Little Dragon"** that sees your game screen and provides real-time help.
+The game page includes an AI chat companion **"Wawa"** that sees your game screen and provides real-time help.
 
 ### 功能 · Features
 
 | 功能 · Feature | 说明 · Description |
 |---------------|-------------------|
-| 🖼️ **游戏截屏** | 使用 js-dos 原生 API (`ci.screenshot()`) 捕获游戏画面，正确读取 WebGL 缓冲区 · Uses js-dos native API for proper WebGL buffer capture |
+| 🖼️ **游戏截屏** | 使用 js-dos 原生 API (`ci.screenshot()`) 捕获 WebGL 画面，JPEG 85% 质量 · Native js-dos API for WebGL capture, JPEG 85% quality |
 | 🎤 **语音输入** | 浏览器语音识别 (Web Speech API)，支持中文 · Browser speech recognition (Chinese) |
-| 🔊 **语音播报** | Edge TTS 神经网络语音 (免费, 自然) + 浏览器内置 TTS 后备 · Neural Edge TTS (free) + browser TTS fallback |
+| 🔊 **语音播报** | Edge TTS 神经网络语音 (普通话/广东话, 男/女声可选) + 浏览器 TTS 后备 · Neural Edge TTS (Mandarin/Cantonese, M/F voice) + browser fallback |
 | 📌 **面板固定** | 固定聊天面板，隐藏遮罩层，可边玩边看 AI 回复 · Pin panel to keep it open while playing the game |
 | ⚙️ **自定义 AI** | 支持自备 API 密钥，兼容 Anthropic 和 OpenAI 接口 · Bring your own API key, Anthropic & OpenAI-compatible |
+| 🖥️ **页面不遮挡** | 打开聊天面板时整个页面向右平移，游戏画面不被遮挡 · Page shifts right when chat opens, game stays fully visible |
+| 🎯 **游戏感知** | AI 自动获知当前游戏名称、类型、操作按键和秘籍 · AI knows current game name, genre, controls & cheats |
+| 🗑️ **缓存管理** | 一键清除所有聊天记录、AI 设置和偏好 · One-click clear all chat history, AI settings, and preferences |
 | 💬 **对话记忆** | 对话历史保存在浏览器 localStorage，刷新不丢失 · Chat history persisted in localStorage |
-| 📐 **可调面板** | 左侧固定面板，可拖拽调整宽度 (280-480px)，不缩游戏画面 · Left-side fixed panel, resizable, doesn't shrink game |
+| 📐 **可调面板** | 左侧固定面板，可拖拽调整宽度 (280-480px) · Left-side fixed panel, resizable (280-480px) |
 
 ### 配置 · Configuration
 
@@ -386,11 +390,15 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."    # PowerShell
 2. 点击 "🤖 助手" 按钮打开聊天面板
 3. 点击聊天面板顶部的 "⚙️" 设置按钮
 4. 填写：
-   - **AI 提供商**: Anthropic (Claude) 或 OpenAI 兼容
+   - **AI 提供商**: Anthropic (Claude) 或 OpenAI 兼容 (DeepSeek 等)
    - **API 密钥**: 你的 API 密钥
-   - **模型名称**: 如 `claude-sonnet-4-20250514` 或 `gpt-4o`
-   - **API 地址**: (OpenAI 模式可选) 自定义端点 URL
+   - **模型名称**: 如 `claude-sonnet-4-20250514`、`gpt-4o`、`deepseek-chat`
+   - **API 地址**: (OpenAI 模式可选) 如 `https://api.deepseek.com/v1`
+   - **TTS 语音**: 普通话/广东话，男声/女声
+   - **TTS 语速**: 慢速/标准/较快/快速
 5. 点击保存
+
+> 💡 **DeepSeek 用户**: 选择"OpenAI 兼容"，API 地址填 `https://api.deepseek.com/v1`，模型填 `deepseek-chat`（支持截屏）或 `deepseek-reasoner`（不支持截屏，自动回退文字模式）。
 
 用户密钥保存在浏览器 localStorage，仅随聊天请求发送。
 
@@ -399,25 +407,30 @@ User keys are stored in browser localStorage, only sent with chat requests.
 ### 工作流程 · How It Works
 
 ```
-用户发送消息 (文本 / 语音)
-  → chat.js: captureScreenshot() (async)
-      ├─ 主: window.DOS.Game.captureScreenshot() → dosCI.screenshot() (读取 WebGL 缓冲区)
-      └─ 备: canvas 扫描 → toDataURL (fallback)
-  → POST /api/ai/chat {
-      messages: [...history],
-      screenshot: "base64...",
-      api_key: "sk-...",      // 可选 · Optional
-      provider: "anthropic",   // 可选 · Optional
-      model: "claude-...",     // 可选 · Optional
-    }
-  → ai_service.py: 解析配置 → 调用 AI API
-  → AI 回复 → 渲染消息气泡 → [可选: TTS 语音播报]
-  → 对话历史保存到 localStorage
+用户打开聊天面板
+  → body 添加 chat-open 类 → padding-left 平滑过渡 → 页面右移不遮挡游戏
+  → 点击输入框 → capture-phase 键盘拦截器阻断 js-dos 事件劫持 → 游戏继续运行
+  → 用户输入消息 (文本 / 语音)
+    → chat.js: captureScreenshot() (async)
+        ├─ 主: window.DOS.Game.captureScreenshot() → dosCI.screenshot() (读取 WebGL 缓冲区)
+        └─ 备: canvas 扫描 → toDataURL (fallback)
+    → POST /api/ai/chat {
+        messages: [...history],
+        screenshot: "base64...",
+        api_key: "sk-...",      // 可选 · Optional
+        provider: "anthropic",   // 可选 · Optional
+        model: "claude-...",     // 可选 · Optional
+      }
+    → ai_service.py: 解析配置 → 调用 AI API
+    → AI 回复 → 渲染消息气泡
+    → [可选: TTS 语音播报] → POST /api/tts → Edge TTS (普通话/广东话, 男/女声) → 播放 MP3
+    → 对话历史保存到 localStorage
+  → 发送后自动失焦输入框 → 键盘归还游戏 → 游戏不受影响继续运行
 ```
 
 ### AI 系统提示 · System Prompt
 
-小龙被设定为一位熟悉 1980-90 年代中文 DOS 游戏的 AI 助手：
+Wawa 被设定为一位熟悉 1980-90 年代中文 DOS 游戏的 AI 助手：
 - 默认使用简体中文回复
 - 保持回复简洁 (2-4 段)
 - 除非明确要求，否则只给提示不剧透
@@ -489,7 +502,8 @@ Server processing:
 | 后端引擎 · Backend Engine | DOSBox-X (CJK TTF + DBCS) — internal, managed by js-dos |
 | 元数据 · Metadata | Wikipedia API |
 | AI 聊天 · AI Chat | Anthropic Claude API + OpenAI-compatible (vision) |
-| 语音 · Voice | Web Speech API (SpeechRecognition + SpeechSynthesis) |
+| 语音输入 · Voice In | Web Speech API (SpeechRecognition) |
+| 语音播报 · Voice Out | Edge TTS (zh-CN-XiaoxiaoNeural) + Web Speech API fallback |
 | 运行环境 · Runtime | Python 3.10+ |
 
 ---

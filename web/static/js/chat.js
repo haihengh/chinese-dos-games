@@ -20,6 +20,30 @@
     const MAX_MESSAGE_LENGTH = 4000;
 
     // ═══════════════════════════════════════════════════════════
+    //  Settings Persistence (must precede state which calls loadSettings)
+    // ═══════════════════════════════════════════════════════════
+
+    // Edge TTS voice presets
+    const TTS_VOICES = {
+        'mandarin-female': { voice: 'zh-CN-XiaoxiaoNeural', label: '普通话 女声 (晓晓)' },
+        'mandarin-male':   { voice: 'zh-CN-YunxiNeural',   label: '普通话 男声 (云希)' },
+        'cantonese-female':{ voice: 'zh-HK-HiuGaaiNeural', label: '广东话 女声 (晓佳)' },
+        'cantonese-male':  { voice: 'zh-HK-WanLungNeural', label: '广东话 男声 (云龙)' },
+    };
+    const TTS_DEFAULT_VOICE = 'mandarin-female';
+
+    function defaultSettings() {
+        return {
+            provider: 'anthropic',
+            api_key: '',
+            model: '',
+            base_url: '',
+            tts_voice: TTS_DEFAULT_VOICE,
+            tts_rate: '+15%',
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
     //  State
     // ═══════════════════════════════════════════════════════════
 
@@ -46,19 +70,6 @@
     // ═══════════════════════════════════════════════════════════
 
     let els = {};
-
-    // ═══════════════════════════════════════════════════════════
-    //  Settings Persistence
-    // ═══════════════════════════════════════════════════════════
-
-    function defaultSettings() {
-        return {
-            provider: 'anthropic',
-            api_key: '',
-            model: '',
-            base_url: '',
-        };
-    }
 
     function loadSettings() {
         try {
@@ -142,11 +153,11 @@
 
             <div class="chat-header">
                 <span class="chat-status-dot" id="chat-status-dot" title="检查中..."></span>
-                <span class="chat-header-title">🐉 AI 游戏助手</span>
-                <button class="chat-header-btn ${state.isPinned ? 'active' : ''}" id="btn-chat-pin" title="${state.isPinned ? '已固定 — 点击取消固定' : '固定面板 — 防止自动关闭'}">📌</button>
+                <span class="chat-header-title">🐱 AI 游戏助手</span>
+                <button class="chat-header-btn ${state.isPinned ? 'active' : ''}" id="btn-chat-pin" title="${state.isPinned ? '已固定 — 点击取消固定' : '固定面板 — 防止自动关闭'}">${state.isPinned ? '📍' : '📌'}</button>
                 <button class="chat-header-btn" id="btn-chat-settings" title="AI 设置">⚙️</button>
                 <button class="chat-header-btn" id="btn-chat-new" title="新对话">🔄</button>
-                <button class="chat-header-btn ${state.ttsEnabled ? 'active' : ''}" id="btn-chat-tts" title="语音播报">🔊</button>
+                <button class="chat-header-btn ${state.ttsEnabled ? 'active' : ''} ${state.ttsEnabled && _ttsEngine === 'browser' ? 'tts-browser' : ''}" id="btn-chat-tts" title="语音播报">${state.ttsEnabled ? (_ttsEngine === 'edge' ? '🔊' : '🔉') : '🔇'}</button>
                 <button class="chat-header-btn" id="btn-chat-close" title="关闭面板">✕</button>
             </div>
 
@@ -178,13 +189,33 @@
                     <div class="chat-settings-row" id="settings-baseurl-row" ${state.settings.provider === 'openai' ? '' : 'style="display:none;"'}>
                         <label class="chat-settings-label">API 地址</label>
                         <input type="text" class="chat-settings-input" id="settings-baseurl"
-                            placeholder="https://api.openai.com/v1"
+                            placeholder="https://api.openai.com/v1 (DeepSeek: https://api.deepseek.com/v1)"
                             value="${escapeAttr(state.settings.base_url)}">
+                    </div>
+                    <div class="chat-settings-divider"></div>
+                    <div class="chat-settings-section-label">🔊 TTS 语音播报</div>
+                    <div class="chat-settings-row">
+                        <label class="chat-settings-label">语音</label>
+                        <select class="chat-settings-select" id="settings-tts-voice">
+                            ${Object.entries(TTS_VOICES).map(([key, v]) =>
+                                `<option value="${key}" ${state.settings.tts_voice === key ? 'selected' : ''}>${v.label}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                    <div class="chat-settings-row">
+                        <label class="chat-settings-label">语速</label>
+                        <select class="chat-settings-select" id="settings-tts-rate">
+                            <option value="-20%" ${state.settings.tts_rate === '-20%' ? 'selected' : ''}>慢速 -20%</option>
+                            <option value="+0%" ${state.settings.tts_rate === '+0%' ? 'selected' : ''}>标准 +0%</option>
+                            <option value="+15%" ${state.settings.tts_rate === '+15%' ? 'selected' : ''}>较快 +15%</option>
+                            <option value="+30%" ${state.settings.tts_rate === '+30%' ? 'selected' : ''}>快速 +30%</option>
+                        </select>
                     </div>
                 </div>
                 <div class="chat-settings-footer">
                     <span class="chat-settings-hint" id="settings-hint"></span>
                     <div class="chat-settings-actions">
+                        <button class="btn btn-sm btn-danger-ghost" id="btn-clear-cache" title="清除所有聊天记录和设置">🗑️ 清除缓存</button>
                         <button class="btn btn-sm" id="btn-settings-cancel">取消</button>
                         <button class="btn btn-sm btn-primary" id="btn-settings-save">保存</button>
                     </div>
@@ -274,6 +305,9 @@
             toggleSettings(false);
         });
 
+        // Clear all cache
+        document.getElementById('btn-clear-cache').addEventListener('click', clearAllCache);
+
         // Key visibility toggle
         document.getElementById('btn-toggle-key-vis').addEventListener('click', toggleKeyVisibility);
 
@@ -293,11 +327,45 @@
         });
 
         // Enter to send, Shift+Enter for newline
+        // Use capture phase to intercept before js-dos emulator steals keyboard
         els.input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
+                e.stopPropagation();
                 const text = els.input.value.trim();
                 if (text) sendMessage(text);
+            }
+        }, true);  // capture phase — beats js-dos event hijacking
+
+        // Track when chat textarea has focus.
+        // The document-level capture-phase keydown blocker (above) handles
+        // preventing js-dos from hijacking keystrokes — no need to pause
+        // the emulator. The game keeps running while typing.
+        els.input.addEventListener('focus', () => {
+            _chatInputFocused = true;
+        });
+        els.input.addEventListener('blur', () => {
+            _chatInputFocused = false;
+        });
+
+        // Block js-dos keyboard capture when typing in chat.
+        // js-dos v8 listens on `document` in capture phase for keydown events.
+        // We register our blocker FIRST (before game.js creates the emulator)
+        // and use stopImmediatePropagation to neuter js-dos's handler.
+        document.addEventListener('keydown', (e) => {
+            if (_chatInputFocused) {
+                // Only block if the target is NOT our textarea (let typing through)
+                // If target IS our textarea, we still need to block js-dos from
+                // also receiving the event via its document capture handler.
+                e.stopImmediatePropagation();
+                // Do NOT stopPropagation — let the event reach the textarea normally
+            }
+        }, true);  // capture phase — must beat js-dos
+
+        // Click anywhere on the input area, force focus to textarea
+        els.inputArea.addEventListener('mousedown', (e) => {
+            if (!_chatInputFocused && state.isOpen && !state.isWaiting) {
+                els.input.focus();
             }
         });
 
@@ -361,6 +429,12 @@
         document.getElementById('settings-model').value = state.settings.model;
         document.getElementById('settings-baseurl').value = state.settings.base_url;
 
+        // TTS fields
+        const ttsVoice = document.getElementById('settings-tts-voice');
+        const ttsRate = document.getElementById('settings-tts-rate');
+        if (ttsVoice) ttsVoice.value = state.settings.tts_voice || TTS_DEFAULT_VOICE;
+        if (ttsRate) ttsRate.value = state.settings.tts_rate || '+15%';
+
         // Show/hide base URL based on provider
         const baseUrlRow = document.getElementById('settings-baseurl-row');
         if (baseUrlRow) {
@@ -370,7 +444,7 @@
         // Update model placeholder based on provider
         const modelInput = document.getElementById('settings-model');
         if (state.settings.provider === 'openai') {
-            modelInput.placeholder = 'gpt-4o';
+            modelInput.placeholder = 'gpt-4o / deepseek-chat / deepseek-reasoner';
         } else {
             modelInput.placeholder = state.serverModel || 'claude-sonnet-4-20250514';
         }
@@ -381,6 +455,8 @@
         state.settings.api_key = document.getElementById('settings-key').value.trim();
         state.settings.model = document.getElementById('settings-model').value.trim();
         state.settings.base_url = document.getElementById('settings-baseurl').value.trim();
+        state.settings.tts_voice = document.getElementById('settings-tts-voice').value;
+        state.settings.tts_rate = document.getElementById('settings-tts-rate').value;
 
         saveSettings();
         updateStatusIndicator();
@@ -399,7 +475,7 @@
             baseUrlRow.style.display = prov === 'openai' ? '' : 'none';
         }
         if (modelInput) {
-            modelInput.placeholder = prov === 'openai' ? 'gpt-4o' : (state.serverModel || 'claude-sonnet-4-20250514');
+            modelInput.placeholder = prov === 'openai' ? 'gpt-4o / deepseek-chat / deepseek-reasoner' : (state.serverModel || 'claude-sonnet-4-20250514');
         }
         updateSettingsHint();
     }
@@ -466,6 +542,8 @@
 
         if (state.isOpen) {
             els.panel.classList.remove('hidden');
+            // Shift page content right so chat panel doesn't block the game
+            document.body.classList.add('chat-open');
             // Only show backdrop when NOT pinned (backdrop blocks game interaction)
             if (els.backdrop && !state.isPinned) {
                 els.backdrop.classList.add('visible');
@@ -476,9 +554,14 @@
             }, 300); // Wait for slide animation
         } else {
             els.panel.classList.add('hidden');
+            document.body.classList.remove('chat-open');
             if (els.backdrop) els.backdrop.classList.remove('visible');
             // Close settings too
             if (state.isSettingsOpen) toggleSettings(false);
+            // Resume emulator if it was paused for chat input
+            if (window.DOS && window.DOS.Game && window.DOS.Game.resumeAfterInput) {
+                window.DOS.Game.resumeAfterInput();
+            }
         }
 
         updateToggleButton();
@@ -504,8 +587,9 @@
         state.isPinned = !state.isPinned;
         localStorage.setItem('chat_pinned', state.isPinned);
 
-        // Update button appearance
+        // Update button appearance — change emoji shape + class
         if (els.pinBtn) {
+            els.pinBtn.textContent = state.isPinned ? '📍' : '📌';
             els.pinBtn.classList.toggle('active', state.isPinned);
             els.pinBtn.title = state.isPinned ? '已固定 — 点击取消固定' : '固定面板 — 防止自动关闭';
         }
@@ -552,18 +636,23 @@
             let newWidth = startWidth + delta;
             newWidth = Math.max(280, Math.min(480, newWidth));
             els.panel.style.width = newWidth + 'px';
+            // Sync CSS variable so body padding matches
+            document.documentElement.style.setProperty('--chat-width', newWidth + 'px');
         }
 
         function onMouseUp() {
             handle.classList.remove('active');
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
-            localStorage.setItem('chat_panel_width', els.panel.style.width);
+            const width = els.panel.style.width;
+            localStorage.setItem('chat_panel_width', width);
+            document.documentElement.style.setProperty('--chat-width', width);
         }
 
         const savedWidth = localStorage.getItem('chat_panel_width');
         if (savedWidth) {
             els.panel.style.width = savedWidth;
+            document.documentElement.style.setProperty('--chat-width', savedWidth);
         }
     }
 
@@ -602,7 +691,7 @@
             for (const canvas of canvases) {
                 try {
                     if (canvas.width < 16 || canvas.height < 16) continue;
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
                     const base64 = dataUrl.split(',')[1];
                     if (base64 && base64.length > 500) {
                         console.log('[chat.js] Screenshot OK via canvas fallback, size:', base64.length,
@@ -614,21 +703,6 @@
                     // Tainted canvas or other error — skip this canvas
                     continue;
                 }
-            }
-        }
-
-        // ── Method 3: Single canvas querySelector fallback (original behavior) ──
-        const canvas = document.querySelector('#dos-container canvas');
-        if (canvas && canvas.width >= 16 && canvas.height >= 16) {
-            try {
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                const base64 = dataUrl.split(',')[1];
-                if (base64 && base64.length > 500) {
-                    console.log('[chat.js] Screenshot OK via single-canvas fallback, size:', base64.length);
-                    return base64;
-                }
-            } catch (e) {
-                console.warn('[chat.js] Single-canvas fallback failed:', e.message);
             }
         }
 
@@ -653,6 +727,7 @@
     }
 
     let _autoSsInterval = null;
+    let _chatInputFocused = false;  // Track if chat textarea has focus (fight js-dos keyboard hijacking)
 
     function startAutoScreenshot() {
         if (_autoSsInterval) return;
@@ -702,6 +777,8 @@
         if (!trimmed) return;
 
         const screenshot = state.lastScreenshot || await captureScreenshot();
+        console.log('[chat.js] sendMessage screenshot:',
+            screenshot ? ('present, ' + screenshot.length + ' chars') : 'null/empty');
         state.lastScreenshot = null;
         els.ssBtn.classList.remove('screenshot-attached');
 
@@ -713,6 +790,11 @@
 
         els.input.value = '';
         autoResizeInput();
+
+        // Blur immediately to release keyboard back to the game.
+        // (The focus handler pauses the emulator; we want the game to
+        // keep running while AI responds and TTS speaks.)
+        els.input.blur();
 
         state.isWaiting = true;
         setInputEnabled(false);
@@ -726,7 +808,11 @@
                 addMessageBubble('assistant', result.reply);
                 saveHistory();
                 if (state.ttsEnabled) speakText(result.reply);
-            } else if (result.error) {
+            }
+            if (result.warning) {
+                window.DOS.App.showToast('⚠️ ' + result.warning, 'warning', 6000);
+            }
+            if (!result.reply && result.error) {
                 addSystemMessage(result.error, true);
             }
         } catch (err) {
@@ -736,7 +822,8 @@
             hideTyping();
             state.isWaiting = false;
             setInputEnabled(true);
-            els.input.focus();
+            // Don't auto-refocus — let the user click the textarea when
+            // they want to type again. This keeps the game running.
         }
     }
 
@@ -747,10 +834,11 @@
         }));
         const trimmed = apiMessages.slice(-MAX_HISTORY);
 
-        // Build request body with user settings
+        // Build request body with user settings + game context
         const body = {
             messages: trimmed,
             screenshot: screenshot || null,
+            game_context: window.GAME_META || null,
         };
 
         // Include user AI config overrides if user has configured their own key
@@ -863,8 +951,8 @@
 
         container.innerHTML = `
             <div class="chat-welcome">
-                <div class="chat-welcome-icon">🐉</div>
-                <div class="chat-welcome-title">你好！我是小龙</div>
+                <div class="chat-welcome-icon">🐱</div>
+                <div class="chat-welcome-title">你好！我是 Wawa</div>
                 <div class="chat-welcome-text">
                     我是你的 AI 游戏助手。<br>
                     我可以看到你的游戏画面，帮你记住任务、解谜、提供攻略建议，或者只是陪你聊天。
@@ -1162,10 +1250,15 @@
         }
 
         try {
+            // Get configured voice from settings
+            const voiceKey = (state.settings.tts_voice) || TTS_DEFAULT_VOICE;
+            const voiceConfig = TTS_VOICES[voiceKey] || TTS_VOICES[TTS_DEFAULT_VOICE];
+            const rate = state.settings.tts_rate || '+15%';
+
             const resp = await fetch('/api/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: text, voice: 'zh-CN-XiaoxiaoNeural', rate: '+15%' }),
+                body: JSON.stringify({ text: text, voice: voiceConfig.voice, rate: rate }),
             });
 
             if (!resp.ok) {
@@ -1312,16 +1405,19 @@
 
         const btn = document.getElementById('btn-chat-tts');
         if (btn) {
-            btn.classList.remove('tts-speaking');
-            btn.classList.toggle('active', state.ttsEnabled);
-            // Show engine indicator in button text
+            btn.classList.remove('tts-speaking', 'tts-browser');
             if (!state.ttsEnabled) {
-                btn.textContent = '🔊';
+                // Off: muted speaker
+                btn.textContent = '🔇';
+                btn.classList.remove('active');
             } else if (_ttsEngine === 'edge') {
+                // Edge TTS: loud speaker (high quality)
                 btn.textContent = '🔊';
-                btn.style.color = '';
+                btn.classList.add('active');
             } else {
+                // Browser TTS: low speaker (lower quality)
                 btn.textContent = '🔉';
+                btn.classList.add('active', 'tts-browser');
             }
             updateTTSButtonTitle();
         }
@@ -1331,11 +1427,9 @@
             window.DOS.App.showToast('🔇 语音播报已关闭', 'info');
         } else if (_ttsEngine === 'edge') {
             window.DOS.App.showToast('🔊 Edge TTS 神经网络语音 (免费)', 'success');
-            // Quick test with Edge TTS
             speakText('语音播报已开启');
         } else {
             window.DOS.App.showToast('🔉 浏览器内置语音 (离线)', 'info');
-            // Quick browser TTS test
             speakText('语音播报已开启');
         }
     }
@@ -1370,6 +1464,72 @@
             console.warn('[chat.js] Failed to load history:', e);
             state.messages = [];
         }
+    }
+
+    function clearAllCache() {
+        if (!confirm('确定要清除所有 AI 聊天缓存吗？\n\n这将删除：\n• 所有游戏的对话历史\n• AI 设置（密钥、模型等）\n• 语音播报偏好\n• 面板固定状态\n\n此操作不可撤销！')) return;
+
+        // Clear all chat history keys (all games)
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('chat_history_')) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+
+        // Clear settings & preferences
+        localStorage.removeItem(SETTINGS_KEY);
+        localStorage.removeItem(TTS_ENGINE_KEY);
+        localStorage.removeItem('chat_tts_enabled');
+        localStorage.removeItem('chat_pinned');
+        localStorage.removeItem('chat_auto_screenshot');
+        localStorage.removeItem('chat_panel_width');
+
+        // Reset current state
+        state.messages = [];
+        state.lastScreenshot = null;
+        state.settings = defaultSettings();
+        state.ttsEnabled = false;
+        state.isPinned = false;
+        state.autoScreenshot = false;
+        _ttsEngine = 'edge';
+
+        // Update UI
+        els.messagesContainer.innerHTML = '';
+        showWelcome();
+        if (els.pinBtn) {
+            els.pinBtn.textContent = '📌';
+            els.pinBtn.classList.remove('active');
+        }
+
+        // Update TTS button
+        const ttsBtn = document.getElementById('btn-chat-tts');
+        if (ttsBtn) {
+            ttsBtn.textContent = '🔇';
+            ttsBtn.classList.remove('active', 'tts-browser', 'tts-speaking');
+        }
+
+        // Update auto-screenshot toggle
+        const autoSsToggle = document.getElementById('toggle-auto-ss');
+        if (autoSsToggle) autoSsToggle.classList.remove('active');
+
+        // Stop auto-screenshot
+        stopAutoScreenshot();
+
+        // Reset panel width
+        els.panel.style.width = '';
+        document.documentElement.style.setProperty('--chat-width', '360px');
+
+        // Close settings
+        toggleSettings(false);
+
+        // Update indicators
+        updateStatusIndicator();
+        updateConfigHint();
+
+        window.DOS.App.showToast('🗑️ 所有聊天缓存已清除', 'success');
     }
 
     function clearHistory() {

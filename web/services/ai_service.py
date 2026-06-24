@@ -17,7 +17,7 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are an expert retro game companion for Chinese DOS games from the 1980s-1990s. Your name is 小龙 (Little Dragon), a friendly and enthusiastic AI assistant.
+SYSTEM_PROMPT = """You are an expert retro game companion for Chinese DOS games from the 1980s-1990s. Your name is Wawa, a friendly and enthusiastic AI assistant.
 
 ## 你的角色
 - 你正在帮助一位玩家游玩浏览器中的中文 DOS 游戏模拟器。
@@ -115,9 +115,9 @@ def _build_anthropic_messages(messages, screenshot_base64):
     return api_messages, None
 
 
-def _build_openai_messages(messages, screenshot_base64):
+def _build_openai_messages(messages, screenshot_base64, system_prompt=None):
     """Build OpenAI-format message list with vision support."""
-    api_messages = [{'role': 'system', 'content': SYSTEM_PROMPT}]
+    api_messages = [{'role': 'system', 'content': system_prompt or SYSTEM_PROMPT}]
 
     for i, msg in enumerate(messages):
         role = msg['role']
@@ -136,7 +136,7 @@ def _build_openai_messages(messages, screenshot_base64):
                         'type': 'image_url',
                         'image_url': {
                             'url': f'data:image/jpeg;base64,{screenshot_base64}',
-                            'detail': 'low',
+                            'detail': 'auto',
                         },
                     },
                     {
@@ -157,9 +157,49 @@ def _build_openai_messages(messages, screenshot_base64):
     return api_messages, None
 
 
+def _build_system_prompt(game_context):
+    """Build the system prompt, enriched with current game context."""
+    prompt = SYSTEM_PROMPT
+
+    if game_context and isinstance(game_context, dict):
+        name = game_context.get('name_zh') or game_context.get('name_en') or ''
+        name_en = game_context.get('name_en', '')
+        game_type = game_context.get('type', '')
+        year = game_context.get('release_year', '')
+        executable = game_context.get('executable', '')
+        keymaps = game_context.get('keymaps')
+        cheats = game_context.get('cheats')
+
+        parts = []
+        if name:
+            label = f'{name}'
+            if name_en and name_en != name:
+                label += f' ({name_en})'
+            parts.append(f'**当前游戏**: {label}')
+        if game_type:
+            parts.append(f'**类型**: {game_type}')
+        if year:
+            parts.append(f'**发行年份**: {year}')
+        if executable:
+            parts.append(f'**主程序**: {executable}')
+        if keymaps and isinstance(keymaps, dict) and len(keymaps) > 0:
+            km = ', '.join(f'{k}→{v}' for k, v in list(keymaps.items())[:8])
+            parts.append(f'**操作按键**: {km}')
+        if cheats and isinstance(cheats, dict) and len(cheats) > 0:
+            ch = ', '.join(f'{k}={v}' for k, v in list(cheats.items())[:5])
+            parts.append(f'**已知秘籍**: {ch}')
+
+        if parts:
+            game_info = '\n'.join(parts)
+            prompt += f'\n\n## 当前游戏信息\n{game_info}'
+            logger.info(f"Game context added: {name} ({game_type})")
+
+    return prompt
+
+
 # ── Anthropic path (native SDK) ──
 
-def _call_anthropic(api_key, base_url, model, messages, screenshot_base64):
+def _call_anthropic(api_key, base_url, model, messages, screenshot_base64, system_prompt=None):
     """Call Anthropic API via native SDK."""
     from anthropic import Anthropic
 
@@ -172,6 +212,8 @@ def _call_anthropic(api_key, base_url, model, messages, screenshot_base64):
     if error:
         return {'reply': None, 'error': error}
 
+    effective_system = system_prompt or SYSTEM_PROMPT
+
     logger.info(
         f"Calling Anthropic: model={model}, messages={len(api_messages)}, "
         f"base_url={base_url or 'default'}, screenshot={'yes' if screenshot_base64 else 'no'}"
@@ -180,7 +222,7 @@ def _call_anthropic(api_key, base_url, model, messages, screenshot_base64):
     response = client.messages.create(
         model=model,
         max_tokens=4096,
-        system=SYSTEM_PROMPT,
+        system=effective_system,
         messages=api_messages,
     )
 
@@ -202,67 +244,114 @@ def _call_anthropic(api_key, base_url, model, messages, screenshot_base64):
 
 # ── OpenAI-compatible path (HTTP) ──
 
-def _call_openai(api_key, base_url, model, messages, screenshot_base64):
-    """Call OpenAI-compatible chat/completions API via HTTP."""
-    api_messages, error = _build_openai_messages(messages, screenshot_base64)
-    if error:
-        return {'reply': None, 'error': error}
+def _call_openai(api_key, base_url, model, messages, screenshot_base64, system_prompt=None):
+    """Call OpenAI-compatible chat/completions API via HTTP.
 
-    url = base_url.rstrip('/') + '/chat/completions'
+    If the model doesn't support vision (image_url), automatically retries
+    without the screenshot so the chat still works.
+    """
+    effective_system = system_prompt or SYSTEM_PROMPT
 
-    payload = {
-        'model': model,
-        'messages': api_messages,
-        'max_tokens': 4096,
-        'temperature': 0.7,
-    }
+    def _do_call(with_screenshot):
+        api_messages, error = _build_openai_messages(
+            messages, screenshot_base64 if with_screenshot else None, effective_system
+        )
+        if error:
+            return None, error
 
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {api_key}',
-    }
+        url = base_url.rstrip('/') + '/chat/completions'
 
-    logger.info(
-        f"Calling OpenAI-compatible: url={url}, model={model}, "
-        f"messages={len(api_messages)}, screenshot={'yes' if screenshot_base64 else 'no'}"
-    )
+        payload = {
+            'model': model,
+            'messages': api_messages,
+            'max_tokens': 4096,
+            'temperature': 0.7,
+        }
 
-    resp = requests.post(url, json=payload, headers=headers, timeout=120)
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}',
+        }
 
-    if resp.status_code != 200:
-        error_text = resp.text[:500]
-        logger.error(f"OpenAI API error {resp.status_code}: {error_text}")
-        if resp.status_code == 401:
-            return {'reply': None, 'error': 'API 密钥无效，请检查设置'}
-        elif resp.status_code == 429:
-            return {'reply': None, 'error': 'API 请求过于频繁，请稍后再试'}
-        elif resp.status_code == 404:
-            return {'reply': None, 'error': f'模型 "{model}" 未找到，请检查模型名称'}
-        else:
-            return {'reply': None, 'error': f'API 错误 ({resp.status_code})，请检查配置'}
+        logger.info(
+            f"Calling OpenAI-compatible: url={url}, model={model}, "
+            f"messages={len(api_messages)}, screenshot={'yes' if with_screenshot else 'no'}"
+        )
 
-    data = resp.json()
-    reply = data['choices'][0]['message']['content']
-    usage = data.get('usage', {})
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=120)
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"OpenAI API connection failed: {e}")
+            return None, f'无法连接到 {base_url}，请检查 API 地址和网络'
+        except requests.exceptions.Timeout:
+            logger.error(f"OpenAI API timeout: {url}")
+            return None, 'API 请求超时，请稍后再试'
+        except Exception as e:
+            logger.error(f"OpenAI API request failed: {e}")
+            return None, f'请求失败: {str(e)[:200]}'
 
-    logger.info(
-        f"OpenAI response: {len(reply)} chars, "
-        f"in={usage.get('prompt_tokens', '?')}, out={usage.get('completion_tokens', '?')}"
-    )
+        if resp.status_code != 200:
+            error_text = resp.text[:500]
+            logger.error(f"OpenAI API error {resp.status_code}: {error_text}")
 
-    return {
-        'reply': reply,
-        'usage': {
+            detail = error_text
+            try:
+                err_json = resp.json()
+                if 'error' in err_json:
+                    detail = err_json['error'].get('message', err_json['error'])
+            except Exception:
+                pass
+
+            if resp.status_code == 401:
+                return None, f'API 密钥无效 — {detail}'
+            elif resp.status_code == 429:
+                return None, 'API 请求过于频繁，请稍后再试'
+            elif resp.status_code == 404:
+                return None, f'端点未找到 — 请检查 API 地址是否正确（需以 /v1 结尾）'
+            else:
+                return None, f'API 错误 ({resp.status_code}): {detail[:200]}'
+
+        data = resp.json()
+        reply = data['choices'][0]['message']['content']
+        usage = data.get('usage', {})
+
+        logger.info(
+            f"OpenAI response: {len(reply)} chars, "
+            f"in={usage.get('prompt_tokens', '?')}, out={usage.get('completion_tokens', '?')}"
+        )
+
+        return {'reply': reply, 'usage': {
             'input_tokens': usage.get('prompt_tokens', 0),
             'output_tokens': usage.get('completion_tokens', 0),
-        },
-    }
+        }}, None
+
+    # First attempt: with screenshot if provided
+    if screenshot_base64:
+        result, error = _do_call(with_screenshot=True)
+        if result:
+            return result
+        # If the error is about image_url/vision not supported, retry without
+        if error and ('image_url' in error or 'vision' in error.lower() or 'image' in error.lower()):
+            logger.info(f"Model {model} doesn't support vision — retrying without screenshot")
+            result2, error2 = _do_call(with_screenshot=False)
+            if result2:
+                result2['warning'] = '当前模型不支持图片输入，截屏未发送。建议使用 deepseek-chat 或支持视觉的模型。'
+                return result2
+            return {'reply': None, 'error': error2}
+        return {'reply': None, 'error': error}
+
+    # No screenshot — just call once
+    result, error = _do_call(with_screenshot=False)
+    if result:
+        return result
+    return {'reply': None, 'error': error}
 
 
 # ── Main entry point ──
 
 def chat_with_ai(messages, screenshot_base64=None,
-                 api_key=None, base_url=None, model=None, provider=None):
+                 api_key=None, base_url=None, model=None, provider=None,
+                 game_context=None):
     """Send conversation to AI and return the assistant's reply.
 
     Args:
@@ -272,6 +361,7 @@ def chat_with_ai(messages, screenshot_base64=None,
         base_url: per-request base URL override (or None for default)
         model: per-request model override (or None for server default)
         provider: 'anthropic' (default) or 'openai'
+        game_context: dict with game metadata (name_zh, name_en, type, year, etc.)
 
     Returns:
         dict with 'reply' (str) and optionally 'error' (str), 'usage' (dict)
@@ -282,11 +372,19 @@ def chat_with_ai(messages, screenshot_base64=None,
     if error:
         return {'reply': None, 'error': error}
 
+    if screenshot_base64:
+        logger.info(f"Chat request with screenshot: {len(screenshot_base64)} chars base64")
+    else:
+        logger.info("Chat request without screenshot")
+
+    # Build game-aware system prompt
+    system_prompt = _build_system_prompt(game_context)
+
     try:
         if prov == 'openai':
-            return _call_openai(key, url, mdl, messages, screenshot_base64)
+            return _call_openai(key, url, mdl, messages, screenshot_base64, system_prompt)
         else:
-            return _call_anthropic(key, url, mdl, messages, screenshot_base64)
+            return _call_anthropic(key, url, mdl, messages, screenshot_base64, system_prompt)
 
     except ImportError:
         return {'reply': None, 'error': 'AI 服务依赖未安装，请运行 pip install anthropic'}

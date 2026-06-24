@@ -6,3 +6,4 @@ uploads_temp/
 __pycache__/
 *.pyc
 .env
+certs/

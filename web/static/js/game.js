@@ -32,6 +32,7 @@
     let volume = 1.0;
     let bundleBlobUrl = null;  // Track Blob URL for cleanup
     let lastGoodScreenshot = null;  // Fallback: last successful screenshot
+    let _inputPaused = false;       // Track: did WE pause for chat input?
 
     const GAME_ID = window.GAME_ID;
     const BUNDLE_URL = `/api/games/${encodeURIComponent(GAME_ID)}/bundle`;
@@ -637,6 +638,7 @@
     function togglePause() {
         if (!dosProps) return;
         isPaused = !isPaused;
+        _inputPaused = false;  // User manually toggled — clear input-pause flag
         dosProps.setPaused(isPaused);
         document.getElementById('btn-pause').textContent = isPaused ? '▶️ 继续' : '⏯️ 暂停';
     }
@@ -775,9 +777,9 @@
                         c.height = result.height;
                         const ctx = c.getContext('2d');
                         ctx.putImageData(result, 0, 0);
-                        dataUrl = c.toDataURL('image/jpeg', 0.7);
+                        dataUrl = c.toDataURL('image/jpeg', 0.85);
                     } else if (result instanceof HTMLCanvasElement) {
-                        dataUrl = result.toDataURL('image/jpeg', 0.7);
+                        dataUrl = result.toDataURL('image/jpeg', 0.85);
                     } else if (result && result.data && result.width) {
                         // ImageData-like object
                         const c = document.createElement('canvas');
@@ -789,7 +791,7 @@
                             result.width,
                             result.height
                         ), 0, 0);
-                        dataUrl = c.toDataURL('image/jpeg', 0.7);
+                        dataUrl = c.toDataURL('image/jpeg', 0.85);
                     }
 
                     if (dataUrl && dataUrl.startsWith('data:image/')) {
@@ -847,5 +849,21 @@
     window.DOS.Game = {
         captureScreenshot: captureGameScreenshot,
         get dosCI() { return dosCI; },
+        get dosProps() { return dosProps; },
+        get isPaused() { return isPaused; },
+        /** Pause emulator (releases keyboard capture for chat input) */
+        pauseForInput: () => {
+            if (dosProps && !isPaused) {
+                dosProps.setPaused(true);
+                _inputPaused = true;
+            }
+        },
+        /** Resume emulator after chat input done */
+        resumeAfterInput: () => {
+            if (dosProps && _inputPaused) {
+                dosProps.setPaused(false);
+                _inputPaused = false;
+            }
+        },
     };
 })();

@@ -158,6 +158,15 @@
     window.GAME_ID = "{{ game.identifier }}";
     window.GAME_EXECUTABLE = "{{ game.executable }}";
     window.GAME_NAME = "{{ game.name_zh }}";
+    window.GAME_META = {
+        name_zh: "{{ game.name_zh }}",
+        name_en: "{{ game.name_en or '' }}",
+        type: "{{ game.type or '' }}",
+        release_year: "{{ game.release_year or '' }}",
+        keymaps: {{ game.keymaps | tojson if game.keymaps else 'null' }},
+        cheats: {{ game.cheats | tojson if game.cheats else 'null' }},
+        executable: "{{ game.executable }}",
+    };
 </script>
 {% endblock %}
 

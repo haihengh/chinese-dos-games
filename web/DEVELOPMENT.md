@@ -127,7 +127,7 @@ python app.py
 - **`ai_service.py`** — AI chat proxy
   - Anthropic Claude API (native SDK) + OpenAI-compatible (HTTP REST)
   - Supports per-request API key/base URL/model overrides
-  - System prompt: "小龙" game companion persona
+  - System prompt: "Wawa" game companion persona
   - Error mapping: auth errors, rate limits, token limits → user-friendly messages
 
 ## Save Architecture (Critical!)

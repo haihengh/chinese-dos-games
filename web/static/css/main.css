@@ -866,7 +866,152 @@ img {
 }
 .profile-title {
     font-size: 1.5rem;
-    margin-bottom: 24px;
+    margin-bottom: 28px;
+}
+
+/* User info header */
+.profile-user-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+.profile-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--bg-input);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    flex-shrink: 0;
+}
+.profile-user-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.profile-username {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.profile-joined {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.profile-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+    width: fit-content;
+}
+.profile-badge-admin {
+    background: rgba(245,158,11,0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245,158,11,0.3);
+}
+
+/* Section divider */
+.profile-section {
+    margin-top: 28px;
+}
+.profile-section-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+/* Stats grid */
+.profile-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+}
+.profile-stat-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    text-align: center;
+}
+.profile-stat-icon {
+    font-size: 1.4rem;
+    margin-bottom: 6px;
+}
+.profile-stat-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.profile-stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+/* Item list (saves + uploads) */
+.profile-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color var(--transition), background var(--transition);
+}
+a.profile-item:hover {
+    border-color: var(--primary);
+    background: var(--bg-card-hover);
+}
+.profile-item-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+.profile-item-name {
+    flex: 1;
+    font-size: 0.88rem;
+    color: var(--text);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.profile-item-meta {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.profile-item-arrow {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+/* Upload status badge */
+.upload-status {
+    font-weight: 500;
+}
+.upload-status--completed {
+    color: var(--success);
+}
+.upload-status--processing {
+    color: var(--warning);
+}
+.upload-status--failed {
+    color: var(--danger);
 }
 
 /* ─── Error Page ─── */

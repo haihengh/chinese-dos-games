@@ -245,8 +245,58 @@ def create_app():
     @app.route('/api/auth/me')
     @auth_required
     def api_me():
-        """Get current user info."""
-        return jsonify(g.current_user)
+        """Get current user info with stats."""
+        db = get_db()
+        user_id = g.current_user['user_id']
+
+        # Full user row (includes created_at)
+        user = db.execute(
+            'SELECT id, username, is_admin, created_at FROM users WHERE id = ?',
+            (user_id,)
+        ).fetchone()
+
+        # Save stats
+        saves = db.execute(
+            'SELECT us.game_identifier, us.filesize, us.updated_at, g.name_zh, g.name_en '
+            'FROM user_saves us LEFT JOIN games g ON us.game_identifier = g.identifier '
+            'WHERE us.user_id = ? ORDER BY us.updated_at DESC',
+            (user_id,)
+        ).fetchall()
+
+        # Upload stats
+        uploads = db.execute(
+            'SELECT id, filename, identifier, status, filesize, created_at '
+            'FROM uploads WHERE user_id = ? ORDER BY created_at DESC',
+            (user_id,)
+        ).fetchall()
+
+        total_save_size = sum(s['filesize'] or 0 for s in saves)
+
+        return jsonify({
+            'user_id': user['id'],
+            'username': user['username'],
+            'is_admin': bool(user['is_admin']),
+            'created_at': user['created_at'],
+            'stats': {
+                'save_count': len(saves),
+                'upload_count': len(uploads),
+                'total_save_size': total_save_size,
+            },
+            'saves': [{
+                'game_identifier': s['game_identifier'],
+                'name': s['name_zh'] or s['name_en'] or s['game_identifier'],
+                'filesize': s['filesize'] or 0,
+                'updated_at': s['updated_at'],
+            } for s in saves],
+            'uploads': [{
+                'id': u['id'],
+                'filename': u['filename'],
+                'identifier': u['identifier'],
+                'status': u['status'],
+                'filesize': u['filesize'] or 0,
+                'created_at': u['created_at'],
+            } for u in uploads],
+        })
 
     # ─── API: Saves ───
 
@@ -375,6 +425,7 @@ def create_app():
 
         messages = data.get('messages', [])
         screenshot = data.get('screenshot', None)
+        game_context = data.get('game_context', None)
 
         # Per-request AI config overrides (optional)
         api_key = data.get('api_key', '').strip() or None
@@ -401,6 +452,7 @@ def create_app():
                 messages, screenshot,
                 api_key=api_key, base_url=base_url,
                 model=model, provider=provider,
+                game_context=game_context,
             )
             if result.get('error'):
                 app.logger.warning(f"AI chat service error: {result['error']}")
@@ -498,14 +550,22 @@ except Exception as e:
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ssl', action='store_true', help='Enable HTTPS with auto-generated cert (needed for mic input on non-localhost)')
+    parser.add_argument('--ssl', action='store_true', help='Enable HTTPS (needed for mic input on non-localhost)')
     parser.add_argument('--port', type=int, default=5000)
     args = parser.parse_args()
 
     ssl_context = None
     if args.ssl:
-        # 'adhoc' auto-generates a self-signed cert via pyOpenSSL
-        # Required for Web Speech API when accessing via IP (not localhost)
-        ssl_context = 'adhoc'
+        cert_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'certs')
+        cert_path = os.path.join(cert_dir, 'cert.pem')
+        key_path = os.path.join(cert_dir, 'key.pem')
+
+        if os.path.exists(cert_path) and os.path.exists(key_path):
+            ssl_context = (cert_path, key_path)
+            print(f'[SSL] Using certificate: {cert_path}')
+        else:
+            # Fallback to adhoc if cert files don't exist yet
+            print('[SSL] No cert.pem/key.pem found in certs/, using adhoc. Run generate_cert.py first.')
+            ssl_context = 'adhoc'
 
     app.run(debug=True, host='0.0.0.0', port=args.port, ssl_context=ssl_context)

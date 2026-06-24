@@ -2,13 +2,27 @@
    Chinese DOS Games — AI Chat Panel Styles
    ═══════════════════════════════════════════════════════ */
 
+/* Panel width is controlled via CSS variable, default 360px */
+:root {
+    --chat-width: 360px;
+}
+
+/* ── Body shift when chat is open ── */
+body {
+    padding-left: 0;
+    transition: padding-left 0.3s ease;
+}
+body.chat-open {
+    padding-left: var(--chat-width);
+}
+
 /* ─── Chat Panel Container ─── */
 .chat-panel {
     position: fixed;
     left: 0;
     top: 0;
     height: 100vh;
-    width: 360px;
+    width: var(--chat-width);
     z-index: 300;
     background: var(--bg-card);
     border-right: 1px solid var(--border);
@@ -30,7 +44,7 @@
     transform: translateX(0);
 }
 
-/* Backdrop overlay (mobile) */
+/* Backdrop overlay — only shown when unpinned */
 .chat-backdrop {
     position: fixed;
     inset: 0;
@@ -97,10 +111,27 @@
     color: var(--primary-hover);
 }
 
-/* Pin button — when pinned, give it a distinct warm color */
+/* Pin button — unpinned: 📌 (angled tack), pinned: 📍 (round pushpin embedded) */
+#btn-chat-pin {
+    transition: transform 0.2s ease, color 0.2s ease, text-shadow 0.2s ease;
+}
 #btn-chat-pin.active {
     color: #f59e0b;
     text-shadow: 0 0 6px rgba(245,158,11,0.4);
+    transform: scale(1.15);
+}
+
+/* TTS button — distinct styles per engine */
+#btn-chat-tts .tts-off {
+    /* default dim appearance */
+}
+#btn-chat-tts.active {
+    color: var(--primary-hover);
+}
+#btn-chat-tts.tts-browser {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    opacity: 0.75;
 }
 
 /* Status dot */
@@ -218,7 +249,7 @@
     color: var(--text);
 }
 .chat-message--assistant::before {
-    content: '🐉 ';
+    content: '🐱 ';
     font-size: 0.75rem;
 }
 
@@ -560,6 +591,18 @@
     background-position: right 10px center;
     padding-right: 28px;
 }
+
+/* Settings divider + section label */
+.chat-settings-divider {
+    border-top: 1px solid var(--border);
+    margin: 4px 0;
+}
+.chat-settings-section-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 4px 0;
+}
 .chat-settings-key-row {
     display: flex;
     gap: 6px;
@@ -584,6 +627,24 @@
     display: flex;
     gap: 6px;
     flex-shrink: 0;
+}
+
+/* Danger ghost button (clear cache) */
+.btn-danger-ghost {
+    background: transparent;
+    border: 1px solid rgba(239,68,68,0.3);
+    color: var(--danger);
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all var(--transition);
+    margin-right: auto;
+}
+.btn-danger-ghost:hover {
+    background: rgba(239,68,68,0.1);
+    border-color: var(--danger);
 }
 
 /* Welcome config note */
@@ -639,5 +700,9 @@
     }
     .chat-resize-handle {
         display: none;
+    }
+    /* Don't shift body on mobile — panel overlays as full-width drawer */
+    body.chat-open {
+        padding-left: 0;
     }
 }
