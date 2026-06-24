@@ -15,8 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── Docker image names ──
-DOCKERHUB_IMAGE="rwv/chinese-dos-games"
-GHCR_IMAGE="ghcr.io/rwv/chinese-dos-games"
+DOCKERHUB_IMAGE="haihengh/chinese-dos-games"
+GHCR_IMAGE="ghcr.io/haihengh/chinese-dos-games"
 TAG="v$VERSION"
 
 echo "╔══════════════════════════════════════╗"
@@ -74,7 +74,7 @@ if command -v gh &>/dev/null; then
         --draft
 
     echo "  ✓ GitHub Release draft created: review and publish at"
-    echo "    https://github.com/rwv/chinese-dos-games/releases"
+    echo "    https://github.com/haihengh/chinese-dos-games/releases"
 else
     echo "  ⚠ gh CLI not found. Create release manually:"
     echo "    https://github.com/rwv/chinese-dos-games/releases/new?tag=$TAG"

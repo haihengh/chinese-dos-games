@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 FROM python:3.11-slim
 LABEL org.opencontainers.image.title="Chinese DOS Games Web"
 LABEL org.opencontainers.image.description="Play 1898+ Chinese DOS games in your browser"
-LABEL org.opencontainers.image.source="https://github.com/rwv/chinese-dos-games"
+LABEL org.opencontainers.image.source="https://github.com/haihengh/chinese-dos-games"
 LABEL org.opencontainers.image.licenses="MIT"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
