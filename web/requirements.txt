@@ -3,3 +3,4 @@ pyjwt>=2.8
 werkzeug>=3.0
 requests>=2.31
 anthropic>=0.49.0
+pyOpenSSL>=23.0

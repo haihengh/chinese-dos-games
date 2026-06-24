@@ -5,79 +5,55 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- **Save/Restore Functionality** — Game saves now persist correctly across browser page refreshes
-  - Previously, saves were lost on page reload due to inconsistent Bundle URLs
-  - Root cause: Fallback to `URL.createObjectURL()` created different Blob URLs each session
-  - Solution: Always use consistent `BUNDLE_URL` (`/api/games/{GAME_ID}/bundle`)
-  - Saves are keyed by URL, so consistent URL ensures saves are found
+- **AI Screenshot Capture (Black Screen)** — AI assistant can now see game screenshots properly
+  - Previously: `canvas.toDataURL()` returned black images for js-dos WebGL canvas
+  - Root cause: WebGL `preserveDrawingBuffer: false` (default) — drawing buffer cleared before read
+  - Solution: Use js-dos native `ci.screenshot()` API which properly reads the WebGL buffer
+  - Falls back to enhanced canvas scanning (all canvases in container) if native API unavailable
+  - Last-good-screenshot cache as final fallback
 
-- **Cloud Save Authentication Error** — Removed misleading "browser not login" notifications
-  - Previously showed when pressing Escape or on certain js-dos events
-  - Root cause: js-dos trying to sync saves to cloud storage (which requires auth)
-  - Solution: Switched to local-only save using `dosCI.persist()` to IndexedDB
-  - Added notification suppression to hide remaining js-dos cloud save messages
+- **Microphone Input** — Voice input now works from any hostname/IP
+  - Previously: Web Speech API requires secure context, `http://127.0.0.1` not considered secure
+  - Solution: Added `--ssl` flag for auto-generated self-signed certificate (HTTPS)
+  - Installed `pyOpenSSL` dependency for `ssl_context='adhoc'`
+  - Now accessible via `https://127.0.0.1:5000` or `https://<LAN-IP>:5000`
+
+### Added
+- **Chat Panel Pin** — Pin the AI chat panel to keep it open while playing
+  - 📌 pin button in chat header — toggles stable/auto-hide modes
+  - Pinned: backdrop hidden, clicking outside won't close, Escape won't close
+  - Unpinned: original behavior (auto-hide on outside click)
+  - State persisted to `localStorage.chat_pinned`
 
 ### Changed
-- **Save Architecture**: Switched from cloud-dependent to local-only saves
-  - Saves now use browser IndexedDB exclusively (no server sync needed)
-  - No authentication required for save functionality
-  - Per-device saves (independent per browser/device)
-  
-- **Player Initialization**:
-  - `actionPickLocalFile()` now always uses `BUNDLE_URL` instead of Blob URL fallback
-  - `actionDownloadFromServer()` now always uses `BUNDLE_URL` instead of Blob URL fallback
-  - Ensures consistent game/save identification across sessions
+- **Screenshot Capture Architecture**: Two-layer approach
+  - Primary: `window.DOS.Game.captureScreenshot()` via js-dos `ci.screenshot()` (game.js)
+  - Fallback: `captureScreenshot()` canvas scanning in chat.js
+  - Both layers are async, with `await` at all call sites
 
-- **Save Button Behavior**:
-  - `saveGame()` now uses `dosCI.persist()` (local IndexedDB sync)
-  - Removed `dosProps.save()` which was attempting cloud sync
-  - Suppresses js-dos cloud save notifications automatically
-
-### Technical Details
-
-#### Before
-```javascript
-// Created different URL every session
-const url = cached ? BUNDLE_URL : URL.createObjectURL(file);
-// Tried to use cloud save (auth error)
-const saveResult = await dosProps.save();
-```
-
-#### After
-```javascript
-// Always consistent
-await createDosPlayer(BUNDLE_URL);
-// Local-only save
-const changes = await dosCI.persist();
-```
+- **Server Startup**: `python app.py --ssl` enables HTTPS
+  - Default (no flag): HTTP on port 5000 (mic only works on `localhost`)
+  - `--ssl`: HTTPS with auto-generated cert (mic works everywhere)
+  - `--port N`: custom port
 
 ### Files Modified
 - `web/static/js/game.js`
-  - Line 447-463: `actionPickLocalFile()` — removed Blob URL fallback
-  - Line 465-484: `actionDownloadFromServer()` — removed Blob URL fallback
-  - Line 558-611: `setupControls()` & `suppressCloudSaveNotifications()` — added notification suppression
-  - Line 597-628: `saveGame()` — switched to local-only persist()
+  - Added `captureGameScreenshot()` async function using `dosCI.screenshot()`
+  - Exposed `window.DOS.Game` namespace (`captureScreenshot`, `dosCI` getter)
+  - Added `lastGoodScreenshot` fallback cache
 
-### Documentation Updated
-- `web/README.md`
-  - Updated save architecture description (local-only)
-  - Updated feature list (local saves instead of cloud saves)
-  - Updated js-dos API mapping (removed cloud save references)
-  - Added "Key Points" section explaining save behavior
-  - Improved save/load flow documentation
+- `web/static/js/chat.js`
+  - Rewrote `captureScreenshot()` as async, multi-method (native API → canvas scan → querySelector)
+  - Added `isPinned` state, `togglePin()` function, pin button in header
+  - Updated `togglePanel()` to suppress backdrop when pinned
+  - Updated backdrop click, Escape key to respect pin state
+  - All screenshot call sites now `await`
 
-- `web/static/js/game.js`
-  - Enhanced file header comments with detailed architecture explanation
+- `web/static/css/chat.css`
+  - Added `#btn-chat-pin.active` style (amber glow)
 
-### Testing Recommendations
-1. Start a game and make progress
-2. Click "💾 Save" button — should show "已保存 ✅"
-3. Refresh the browser
-4. Game should auto-load with previous progress restored
-5. No "browser not login" error should appear
+- `web/app.py`
+  - Changed `app.run()` to support `--ssl` and `--port` CLI arguments
 
-### Notes
-- Saves are browser-local only, not synced across devices
-- IndexedDB availability is required (works in all modern browsers)
-- Cache API is still used when available for faster bundle loading
-- Fallback to Flask endpoint when Cache API is unavailable
+### Dependencies
+- Added `pyOpenSSL` (required for Flask `ssl_context='adhoc'`)

@@ -452,4 +452,16 @@ except Exception as e:
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--ssl', action='store_true', help='Enable HTTPS with auto-generated cert (needed for mic input on non-localhost)')
+    parser.add_argument('--port', type=int, default=5000)
+    args = parser.parse_args()
+
+    ssl_context = None
+    if args.ssl:
+        # 'adhoc' auto-generates a self-signed cert via pyOpenSSL
+        # Required for Web Speech API when accessing via IP (not localhost)
+        ssl_context = 'adhoc'
+
+    app.run(debug=True, host='0.0.0.0', port=args.port, ssl_context=ssl_context)

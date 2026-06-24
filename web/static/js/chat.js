@@ -25,6 +25,7 @@
 
     const state = {
         isOpen: false,
+        isPinned: localStorage.getItem('chat_pinned') === 'true',
         isWaiting: false,
         isRecording: false,
         isSettingsOpen: false,
@@ -142,6 +143,7 @@
             <div class="chat-header">
                 <span class="chat-status-dot" id="chat-status-dot" title="检查中..."></span>
                 <span class="chat-header-title">🐉 AI 游戏助手</span>
+                <button class="chat-header-btn ${state.isPinned ? 'active' : ''}" id="btn-chat-pin" title="${state.isPinned ? '已固定 — 点击取消固定' : '固定面板 — 防止自动关闭'}">📌</button>
                 <button class="chat-header-btn" id="btn-chat-settings" title="AI 设置">⚙️</button>
                 <button class="chat-header-btn" id="btn-chat-new" title="新对话">🔄</button>
                 <button class="chat-header-btn ${state.ttsEnabled ? 'active' : ''}" id="btn-chat-tts" title="语音播报">🔊</button>
@@ -222,7 +224,7 @@
         backdrop.className = 'chat-backdrop';
         backdrop.id = 'chat-backdrop';
         backdrop.addEventListener('click', () => {
-            if (state.isOpen) togglePanel();
+            if (state.isOpen && !state.isPinned) togglePanel();
         });
         document.body.appendChild(backdrop);
 
@@ -233,6 +235,7 @@
         els.sendBtn = document.getElementById('btn-chat-send');
         els.micBtn = document.getElementById('btn-chat-mic');
         els.ssBtn = document.getElementById('btn-chat-screenshot');
+        els.pinBtn = document.getElementById('btn-chat-pin');
         els.statusDot = document.getElementById('chat-status-dot');
         els.inputArea = document.getElementById('chat-input-area');
         els.resizeHandle = document.getElementById('chat-resize-handle');
@@ -250,6 +253,11 @@
         const toggleBtn = document.getElementById('btn-chat-toggle');
         if (toggleBtn) {
             toggleBtn.addEventListener('click', togglePanel);
+        }
+
+        // Pin button
+        if (els.pinBtn) {
+            els.pinBtn.addEventListener('click', togglePin);
         }
 
         // Close button
@@ -316,7 +324,8 @@
             if (e.key === 'Escape' && state.isOpen) {
                 if (state.isSettingsOpen) {
                     toggleSettings(false);
-                } else if (els.panel.contains(document.activeElement)) {
+                } else if (!state.isPinned && els.panel.contains(document.activeElement)) {
+                    // Only close on Escape when NOT pinned
                     togglePanel();
                 }
             }
@@ -457,7 +466,10 @@
 
         if (state.isOpen) {
             els.panel.classList.remove('hidden');
-            if (els.backdrop) els.backdrop.classList.add('visible');
+            // Only show backdrop when NOT pinned (backdrop blocks game interaction)
+            if (els.backdrop && !state.isPinned) {
+                els.backdrop.classList.add('visible');
+            }
             setTimeout(() => {
                 els.input.focus();
                 scrollToBottom();
@@ -482,6 +494,36 @@
                 btn.classList.remove('save-btn');
             }
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Pin / Auto-hide
+    // ═══════════════════════════════════════════════════════════
+
+    function togglePin() {
+        state.isPinned = !state.isPinned;
+        localStorage.setItem('chat_pinned', state.isPinned);
+
+        // Update button appearance
+        if (els.pinBtn) {
+            els.pinBtn.classList.toggle('active', state.isPinned);
+            els.pinBtn.title = state.isPinned ? '已固定 — 点击取消固定' : '固定面板 — 防止自动关闭';
+        }
+
+        // When pinning: hide backdrop so user can interact with the game
+        // When unpinning: show backdrop so clicking outside closes the panel
+        if (state.isOpen) {
+            if (state.isPinned) {
+                if (els.backdrop) els.backdrop.classList.remove('visible');
+            } else {
+                if (els.backdrop) els.backdrop.classList.add('visible');
+            }
+        }
+
+        window.DOS.App.showToast(
+            state.isPinned ? '📌 面板已固定 — 不会自动关闭' : '📍 面板已取消固定 — 点击外部自动关闭',
+            'info'
+        );
     }
 
     // ═══════════════════════════════════════════════════════════

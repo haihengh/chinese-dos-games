@@ -18,7 +18,7 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 | 🔍 | **自动发现** — 后台定期扫描 `bin/` 目录，自动添加新游戏 | **Auto Discovery** — Background scanner detects new games in `bin/` |
 | 🌐 | **游戏元数据** — 从 Wikipedia 搜索游戏信息和介绍 | **Game Metadata** — Wikipedia search for game info & descriptions |
 | 🇨🇳 | **中文支持** — UTF-8 全栈 + js-dos TTF 字体渲染 | **Chinese Support** — Full-stack UTF-8 + js-dos TTF font rendering |
-| 🤖 | **AI 游戏助手** — 内置聊天机器人 "小龙"，可看游戏画面，语音交互 | **AI Game Companion** — Built-in chatbot "Little Dragon", sees game screen, voice chat |
+| 🤖 | **AI 游戏助手** — 内置聊天机器人 "小龙"，可看游戏画面，语音交互，面板可固定 | **AI Game Companion** — Built-in chatbot "Little Dragon", sees game screen, voice chat, pinnable panel |
 
 ---
 
@@ -40,10 +40,14 @@ cd web
 pip install -r requirements.txt
 
 # 3. 启动服务器 · Start server
-python app.py
+python app.py                  # HTTP (mic only works on localhost)
+python app.py --ssl            # HTTPS (mic works everywhere, recommended)
+python app.py --ssl --port 8080  # Custom port
 ```
 
-访问 · Visit: **http://localhost:5000**
+访问 · Visit: **https://localhost:5000** (or `http://localhost:5000` without `--ssl`)
+
+> 💡 **Mic input requires a secure context.** Without `--ssl`, only `http://localhost:5000` works for voice. With `--ssl`, `https://<any-host>:5000` works — accept the self-signed cert warning in your browser.
 
 ### 可选：中文字体 · Optional: Chinese Font
 
@@ -342,6 +346,7 @@ User refreshes browser or revisits game page
 | `dosProps.setVolume(n)` | 设置音量 (0-1) · Set volume (0-1) |
 | `await dosProps.stop()` | 停止游戏 · Stop game |
 | `dosCI.persist()` | 同步 MEMFS → IndexedDB · Sync MEMFS to IndexedDB |
+| `dosCI.screenshot()` | 捕获当前画面 (用于 AI 助手) · Capture frame (used by AI companion) |
 | `onEvent: 'ci-ready'` | 游戏加载完成回调 · Game ready callback |
 | `autoSave: true` | 启用自动保存 · Enable auto-save |
 
@@ -357,9 +362,10 @@ The game page includes an AI chat companion **"Little Dragon"** that sees your g
 
 | 功能 · Feature | 说明 · Description |
 |---------------|-------------------|
-| 🖼️ **游戏截屏** | 自动捕获 DOS 游戏画面 (canvas → JPEG)，随消息一起发送给 AI · Auto-captures game screen, sends with messages |
+| 🖼️ **游戏截屏** | 使用 js-dos 原生 API (`ci.screenshot()`) 捕获游戏画面，正确读取 WebGL 缓冲区 · Uses js-dos native API for proper WebGL buffer capture |
 | 🎤 **语音输入** | 浏览器语音识别 (Web Speech API)，支持中文 · Browser speech recognition (Chinese) |
 | 🔊 **语音播报** | AI 回复自动朗读 (TTS)，支持中文语音 · AI responses read aloud with Chinese voices |
+| 📌 **面板固定** | 固定聊天面板，隐藏遮罩层，可边玩边看 AI 回复 · Pin panel to keep it open while playing the game |
 | ⚙️ **自定义 AI** | 支持自备 API 密钥，兼容 Anthropic 和 OpenAI 接口 · Bring your own API key, Anthropic & OpenAI-compatible |
 | 💬 **对话记忆** | 对话历史保存在浏览器 localStorage，刷新不丢失 · Chat history persisted in localStorage |
 | 📐 **可调面板** | 左侧固定面板，可拖拽调整宽度 (280-480px)，不缩游戏画面 · Left-side fixed panel, resizable, doesn't shrink game |
@@ -394,7 +400,9 @@ User keys are stored in browser localStorage, only sent with chat requests.
 
 ```
 用户发送消息 (文本 / 语音)
-  → chat.js: captureScreenshot() → canvas.toDataURL('image/jpeg', 0.6)
+  → chat.js: captureScreenshot() (async)
+      ├─ 主: window.DOS.Game.captureScreenshot() → dosCI.screenshot() (读取 WebGL 缓冲区)
+      └─ 备: canvas 扫描 → toDataURL (fallback)
   → POST /api/ai/chat {
       messages: [...history],
       screenshot: "base64...",
