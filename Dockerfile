@@ -27,12 +27,10 @@ ENV PYTHONUNBUFFERED=1 \
 COPY --from=builder /root/.local /root/.local
 
 # Copy app code
-COPY web/ ./web/
-COPY bin/ ./bin/          # Game ZIPs (can be empty, games fetched on demand)
-COPY games.json ./        # Game metadata index
-COPY img/ ./img/          # Cover images (can be empty)
+COPY web/ /app/web/
+COPY games.json /app/games.json
 
-# Runtime directories
+# Game files fetched on demand at runtime — create empty dirs
 RUN mkdir -p /app/web/jsdos_cache /app/web/uploads_temp /app/bin /app/img \
     && chmod 777 /app/bin /app/img /app/web/jsdos_cache /app/web/uploads_temp
 

@@ -33,11 +33,12 @@ web/certs/
 CHANGELOG.md
 DEVELOPMENT.md
 
-# Large game files (fetched on demand)
+# Game files (fetched on demand at runtime)
 bin/*.zip
 img/*.png
 img/*.jpg
 img/*.webp
+# Keep .gitkeep so Docker can COPY the directory
 
 # Environment
 .env
