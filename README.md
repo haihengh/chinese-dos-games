@@ -15,6 +15,12 @@
 
 ## 新增功能 · Recent Updates
 
+✨ **Docker 部署 + 游戏按需下载** (2025-06-23)
+- 🐳 支持 Docker 一键部署 (`docker run` / `docker compose up`)
+- ☁️ 游戏按需下载：首次游玩自动从上游获取，无需 35GB 全量下载
+- 🪟 一键启动脚本：`start.bat` (Windows) / `start.sh` (Mac/Linux)
+- 📦 发布流程：`release.sh` + `RELEASE.md`
+
 ✨ **AI 游戏助手 — Wawa 🐱** (2025-06-23)
 - 🎯 **游戏感知**: AI 自动获知当前游戏名称、类型、操作按键和秘籍
 - 🖼️ **截屏修复**: js-dos 原生 API + JPEG 85% 质量；不支持视觉的模型自动回退文字模式
@@ -32,11 +38,23 @@
 
 详见 [CHANGELOG.md](CHANGELOG.md) 和 [web/README.md](web/README.md)
 
-## 下载游戏文件
+## 快速开始 · Quick Start
 
-在根目录下运行 Python 3 脚本
+### Docker（推荐）
+```bash
+docker run -d -p 5000:5000 -v dos-games-bin:/app/bin rwv/chinese-dos-games:latest
+# 打开 https://localhost:5000，游戏自动按需下载
+```
 
-``` python
+### 一键脚本
+- **Windows**: 双击 `start.bat`
+- **Mac/Linux**: `./start.sh`
+
+### 下载全部游戏文件（可选）
+
+如需离线游玩全部 1898 款游戏（约 35GB）：
+
+```python
 python download_data.py
 ```
 

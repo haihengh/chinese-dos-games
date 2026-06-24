@@ -83,16 +83,21 @@ python app.py
   - Message bubbles, typing indicator, settings form
   - Mic permission help panel, TTS speaking animation
 
-- **`js/chat.js`** — AI chat frontend
-  - Chat panel DOM + settings panel
-  - Canvas screenshot capture (JPEG base64)
-  - Voice input (Web Speech API) with permission handling
-  - Voice output (SpeechSynthesis) with Chinese voice selection
-  - localStorage persistence per game (history + AI settings)
-  - Resizable panel (280-480px)
-  - API calls to `/api/ai/chat`
+- **`js/chat.js`** — AI chat frontend (Wawa 🐱)
+  - Chat panel with pin, resize, settings, keyboard blocker
+  - Canvas screenshot via js-dos `ci.screenshot()` (WebGL-safe)
+  - Game context injection (`window.GAME_META` → server)
+  - Voice input (Web Speech API), voice output (Edge TTS + browser fallback)
+  - TTS settings: Mandarin/Cantonese, male/female, adjustable rate
+  - localStorage persistence: history, AI config, TTS prefs, pin state, panel width
+  - Document-level capture-phase `keydown` blocker (no emulator pause needed)
 
 ### Backend (`services/`)
+
+- **`download_service.py`** — Game-on-demand download
+  - Multi-mirror: GitHub raw → ghproxy (China) → custom CDN
+  - SHA256 verification, stream-to-temp, atomic move
+  - Configurable via `GAME_DOWNLOAD_BASE` env var
 
 - **`bundle_service.py`** — Game bundle creation
   - ZIP inspection and extraction
@@ -124,11 +129,12 @@ python app.py
   - Game information lookup
   - Metadata caching
 
-- **`ai_service.py`** — AI chat proxy
+- **`ai_service.py`** — AI chat proxy (Wawa)
   - Anthropic Claude API (native SDK) + OpenAI-compatible (HTTP REST)
-  - Supports per-request API key/base URL/model overrides
-  - System prompt: "Wawa" game companion persona
-  - Error mapping: auth errors, rate limits, token limits → user-friendly messages
+  - Per-request API key/base URL/model overrides
+  - Game context injection into system prompt (name, type, controls, cheats)
+  - Screenshot with auto-retry for non-vision models (DeepSeek R1 fallback)
+  - Detailed error passthrough from provider APIs
 
 ## Save Architecture (Critical!)
 
@@ -355,6 +361,40 @@ def api_new():
 - Use CSS Grid/Flexbox for layouts
 - Test responsive design
 
+## Docker & Release
+
+### Building the Docker image locally
+```bash
+docker build -t chinese-dos-games:dev .
+docker run -p 5000:5000 chinese-dos-games:dev
+```
+
+### Game-on-demand architecture
+```
+User clicks game → GET /api/games/<id>/bundle
+  → ZIP missing locally?
+    → YES: download_service.py fetches from mirrors
+      → GitHub raw → ghproxy (China) → custom CDN
+      → SHA256 verify → save to bin/
+    → NO: use cached ZIP
+  → bundle_service.py: wrap in .jsdos
+  → Return to js-dos emulator
+```
+
+### Release workflow
+1. `git tag -a "vX.Y.Z" -m "Release vX.Y.Z"` — tag the version
+2. `git push origin vX.Y.Z` — push the tag
+3. `./release.sh X.Y.Z` — build multi-arch Docker, push to registries, create GitHub Release draft
+4. Publish the draft at GitHub Releases
+5. See `RELEASE.md` for full details
+
+### Adding a China mirror
+Set `GAME_DOWNLOAD_BASE` to a China-accessible URL when deploying for Chinese users:
+```bash
+# GitHub proxy
+export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://raw.githubusercontent.com/rwv/chinese-dos-games/refs/heads/master/bin/
+```
+
 ## Performance Considerations
 
 1. **Bundle Caching** — First load generates bundle, subsequent loads use cache
@@ -364,14 +404,30 @@ def api_new():
 
 ## Deployment
 
-See main `README.md` for deployment instructions. Key points:
+### Docker (recommended for users)
+```bash
+docker run -d -p 5000:5000 -v dos-games-bin:/app/bin rwv/chinese-dos-games:latest
+```
 
-- Use production-grade WSGI server (gunicorn, uWSGI)
+### Native launchers
+- Windows: double-click `start.bat`
+- Mac/Linux: `./start.sh`
+
+### Development server
+```bash
+cd web
+pip install -r requirements.txt
+python app.py --ssl
+```
+
+### Production
+- Use production WSGI server (gunicorn, uWSGI) behind nginx
 - Set `SECRET_KEY` and `JWT_SECRET` environment variables
-- Set `ANTHROPIC_API_KEY` environment variable (optional — users can bring their own keys)
+- Set `ANTHROPIC_API_KEY` (optional — users can bring their own keys)
+- Set `GAME_DOWNLOAD_BASE` for China-accessible game mirror
 - Configure proper HTTPS/SSL (required for voice input)
 - Set up database backups
-- Configure reverse proxy (nginx)
+- Mount `/app/bin`, `/app/web/jsdos_cache` as persistent volumes
 
 ## Contributing
 

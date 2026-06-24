@@ -11,7 +11,8 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 | | 中文 | English |
 |---|------|---------|
 | 🎮 | **浏览器游玩** — 无需安装，在浏览器中直接运行 DOS 游戏 | **Browser Play** — Run DOS games directly in your browser, no installation needed |
-| 📚 | **1898+ 款游戏** — 自动从 `games.json` 和 `bin/` 目录加载 | **1898+ Games** — Auto-loaded from `games.json` and `bin/` directory |
+| 📚 | **1898+ 款游戏** — 自动从 `games.json` 加载，首次游玩自动下载 | **1898+ Games** — Auto-loaded from `games.json`, auto-download on first play |
+| ☁️ | **按需下载** — 无需 35GB 全量下载，只下载你要玩的游戏并缓存 | **On-Demand** — No 35GB upfront download; fetch + cache individual games |
 | 👤 | **用户系统** — 注册/登录以管理游戏存档（可选） | **User System** — Register/login to manage game saves (optional) |
 | 💾 | **本地存档** — 游戏进度自动保存到浏览器 IndexedDB，刷新后自动恢复 | **Local Saves** — Game progress auto-saves to browser IndexedDB, auto-restored on refresh |
 | 📤 | **上传游戏** — 拖拽上传自己的 DOS 游戏 ZIP 文件 | **Upload Games** — Drag-and-drop your own DOS game ZIP files |
@@ -24,24 +25,40 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 
 ## 快速开始 · Quick Start
 
-### 前置条件 · Prerequisites
-
-- Python 3.10+
-- 游戏文件已下载到父目录的 `bin/` 文件夹 · Game ZIPs downloaded to parent `bin/` directory
-- 游戏元数据 `games.json` 在父目录 · Game metadata `games.json` in parent directory
-
-### 安装运行 · Install & Run
+### 方式一：Docker（推荐 · Recommended）
 
 ```bash
-# 1. 进入 web 目录 · Enter web directory
+# 一行命令启动，游戏自动按需下载
+docker run -d -p 5000:5000 \
+    -v dos-games-bin:/app/bin \
+    -v dos-games-cache:/app/web/jsdos_cache \
+    -e ANTHROPIC_API_KEY=sk-ant-... \
+    --name dos-games \
+    rwv/chinese-dos-games:latest
+
+# 或使用 docker-compose
+curl -O https://raw.githubusercontent.com/rwv/chinese-dos-games/master/docker-compose.yml
+docker compose up -d
+```
+
+访问 · Visit: **https://localhost:5000**
+
+> 💡 Docker 镜像自动包含 1898 款游戏元数据。首次游玩某一游戏时自动下载（约 5-50MB），之后使用本地缓存。无需预先下载 35GB 游戏库。
+
+### 方式二：一键启动脚本
+
+- **Windows**: 双击 `start.bat`
+- **Mac/Linux**: `chmod +x start.sh && ./start.sh`
+
+### 方式三：手动安装 · Manual Setup
+
+**前置条件 · Prerequisites**: Python 3.10+
+
+```bash
 cd web
-
-# 2. 安装依赖 · Install dependencies
 pip install -r requirements.txt
-
-# 3. 启动服务器 · Start server
-python app.py                  # HTTP (mic only works on localhost)
-python app.py --ssl            # HTTPS (mic works everywhere, recommended)
+python app.py --ssl            # HTTPS (recommended)
+python app.py                  # HTTP (mic only on localhost)
 python app.py --ssl --port 8080  # Custom port
 ```
 
@@ -84,6 +101,7 @@ web/
 ├── services/                    # 业务逻辑 · Business logic
 │   ├── auth_service.py          #   用户认证 · User auth (register/login/JWT)
 │   ├── bundle_service.py        #   ZIP → .jsdos 转换 · ZIP to .jsdos conversion
+│   ├── download_service.py      #   游戏按需下载 · Game-on-demand download
 │   ├── save_service.py          #   存档管理 · Save state management
 │   ├── upload_service.py        #   上传处理 · Upload processing
 │   ├── scanner_service.py       #   后台扫描 · Background scanner

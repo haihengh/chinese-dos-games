@@ -72,8 +72,6 @@ The AI assistant has been renamed from "小龙" (Little Dragon) to **"Wawa"** wi
   - Better error messages: connection failures, timeouts, API errors shown with detail
   - `detail: 'auto'` for image_url (OpenAI default, better compatibility)
   - Placeholder hints for DeepSeek URL and model names in settings
-  - Clears: all game chat histories, AI settings, TTS preferences, pin state, panel width
-  - Detailed confirmation dialog; resets all UI to defaults
 
 - **Profile Page Stats** — Rich user dashboard at `/profile`
   - Avatar, join date, admin badge
@@ -85,6 +83,27 @@ The AI assistant has been renamed from "小龙" (Little Dragon) to **"Wawa"** wi
   - `body.chat-open` → `padding-left: var(--chat-width)` with 0.3s CSS transition
   - `--chat-width` CSS variable synced with panel resize
   - Mobile (≤900px): no shift, panel overlays as full-width drawer
+
+- **Docker Deployment** — Containerized one-command setup
+  - Multi-stage Dockerfile (Python 3.11-slim, non-root user, health check)
+  - `docker-compose.yml` with named volumes for persistent game/bin cache
+  - `.dockerignore` excludes large game files and dev artifacts
+  - Environment variables: `ANTHROPIC_API_KEY`, `GAME_DOWNLOAD_BASE`, `SECRET_KEY`
+
+- **Game-on-Demand** — Automatic game download on first play
+  - `download_service.py`: fetch missing games from GitHub raw / ghproxy / custom CDN
+  - SHA256 verification, stream-to-temp-then-move, multi-mirror fallback
+  - Bundle endpoint auto-downloads before creating .jsdos
+  - `game.js`: auto-download UI with spinner instead of manual first-run card
+  - No 35GB upfront download — each game fetched once, cached forever
+
+- **Launcher Scripts** — Double-click to run
+  - `start.bat` (Windows): checks Python, installs deps, generates SSL cert, opens browser
+  - `start.sh` (Mac/Linux): same, cross-platform
+
+- **Release Process**
+  - `release.sh`: builds multi-arch Docker image, pushes to Docker Hub + GHCR, creates GitHub Release draft
+  - `RELEASE.md`: full release documentation with manual steps, env vars, China mirror setup, user install commands
 
 ### Changed
 - **Keyboard Architecture**: Document-level capture-phase blocker replaces emulator pausing
@@ -103,16 +122,26 @@ The AI assistant has been renamed from "小龙" (Little Dragon) to **"Wawa"** wi
 ### Files Modified
 | File | Key Changes |
 |------|------------|
-| `web/app.py` | `--ssl`/`--port` CLI args, `/api/tts` endpoint, enriched `/api/auth/me` |
-| `web/services/ai_service.py` | System prompt → Wawa, screenshot size logging |
-| `web/static/js/game.js` | `captureGameScreenshot()` via `ci.screenshot()`, `window.DOS.Game` namespace, `pauseForInput`/`resumeAfterInput` |
-| `web/static/js/chat.js` | Async screenshot, pin, TTS rewrite, keyboard blocker, layout shift, clear cache, TTS voice config |
+| `web/app.py` | `--ssl`/`--port` CLI args, `/api/tts` endpoint, enriched `/api/auth/me`, auto-download in bundle endpoint |
+| `web/services/ai_service.py` | System prompt → Wawa, screenshot logging, DeepSeek retry, game context injection |
+| `web/services/download_service.py` | **New** — Game-on-demand: multi-mirror download with SHA256 verification |
+| `web/static/js/game.js` | `captureGameScreenshot()`, `window.DOS.Game` namespace, auto-download UI |
+| `web/static/js/chat.js` | Async screenshot, pin, TTS rewrite, keyboard blocker, layout shift, clear cache, TTS voice config, game context |
 | `web/static/css/chat.css` | Body shift, `--chat-width`, pin/TTS/clear-cache styles, responsive |
 | `web/static/css/main.css` | Profile page: avatar, stats grid, save/upload lists, status badges |
+| `web/templates/game.html` | `window.GAME_META` for game context injection |
 | `web/templates/profile.html` | Complete rewrite with stats dashboard |
 | `web/requirements.txt` | Added `pyOpenSSL>=23.0` |
+| `Dockerfile` | **New** — Multi-stage Python 3.11-slim, non-root, health check |
+| `docker-compose.yml` | **New** — One-command deployment with named volumes |
+| `.dockerignore` | **New** — Exclude large game files, certs, dev artifacts |
+| `start.bat` | **New** — Windows one-click launcher |
+| `start.sh` | **New** — Mac/Linux one-click launcher |
+| `release.sh` | **New** — Multi-arch build + push + GitHub Release |
+| `RELEASE.md` | **New** — Full release process documentation |
 
 ### Dependencies
 - `pyOpenSSL>=23.0` — Flask SSL + persistent cert generation
-- `edge-tts` — Server-side neural TTS (already installed)
-- `cryptography` — Self-signed cert generation (already a pyOpenSSL dependency)
+- `edge-tts` — Server-side neural TTS
+- `cryptography` — Self-signed cert generation (pyOpenSSL dependency)
+- `requests` — Game download HTTP client (already in requirements)

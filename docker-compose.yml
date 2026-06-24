@@ -1,0 +1,45 @@
+# ─── Chinese DOS Games — One-command deployment ───
+#   docker compose up -d
+#   → Open https://localhost:5000
+
+version: "3.8"
+
+services:
+  dos-games:
+    build: .
+    image: chinese-dos-games:latest
+    container_name: dos-games
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    volumes:
+      # Persistent storage for downloaded games and cache
+      - dos-games-bin:/app/bin
+      - dos-games-img:/app/img
+      - dos-games-cache:/app/web/jsdos_cache
+      - dos-games-data:/app/web/data
+    environment:
+      # ── AI Chat (optional) ──
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+
+      # ── Game download mirror ──
+      # Default: direct GitHub (may need VPN in China)
+      # China-friendly: https://ghproxy.net/https://raw.githubusercontent.com/...
+      - GAME_DOWNLOAD_BASE=${GAME_DOWNLOAD_BASE:-}
+
+      # ── Auth ──
+      - SECRET_KEY=${SECRET_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  dos-games-bin:
+  dos-games-img:
+  dos-games-cache:
+  dos-games-data:

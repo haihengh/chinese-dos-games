@@ -174,14 +174,33 @@ def create_app():
 
     @app.route('/api/games/<identifier>/bundle')
     def api_game_bundle(identifier):
-        """Serve .jsdos bundle for a game."""
+        """Serve .jsdos bundle for a game. Auto-downloads if missing."""
         game = get_game(identifier)
         if not game:
             return jsonify({'error': 'Game not found'}), 404
 
         zip_path = os.path.join(Config.BIN_DIR, f'{identifier}.zip')
+
+        # ── Game-on-demand: auto-download missing games ──
         if not os.path.isfile(zip_path):
-            return jsonify({'error': 'Game file not found'}), 404
+            from services.download_service import download_game, MIRRORS
+
+            if not MIRRORS:
+                return jsonify({
+                    'error': '游戏文件未下载，且未配置下载镜像。请设置 GAME_DOWNLOAD_BASE 环境变量。',
+                    'needs_download': True,
+                }), 404
+
+            try:
+                expected_sha256 = game.get('sha256')
+                app.logger.info(f"Auto-downloading {identifier} ...")
+                zip_path = download_game(identifier, Config.BIN_DIR, expected_sha256)
+            except Exception as e:
+                app.logger.error(f"Download failed for {identifier}: {e}")
+                return jsonify({
+                    'error': f'游戏下载失败: {e}',
+                    'needs_download': True,
+                }), 404
 
         try:
             bundle_path = get_or_create_bundle(

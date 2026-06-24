@@ -416,7 +416,15 @@
             const bundleUrl = await prepareBundle();
 
             if (!bundleUrl) {
-                showFirstRunUI();
+                // No local bundle — auto-download from server (game-on-demand)
+                showAutoDownloadUI();
+                try {
+                    await actionDownloadFromServer();
+                } catch (downloadErr) {
+                    // If auto-download fails, show manual first-run UI
+                    console.warn('[game.js] Auto-download failed, showing manual UI:', downloadErr.message);
+                    showFirstRunUI();
+                }
                 return;
             }
 
@@ -444,6 +452,24 @@
     // ═══════════════════════════════════════════════════════════════
     //  First-run UI
     // ═══════════════════════════════════════════════════════════════
+
+    function showAutoDownloadUI() {
+        // Show first-run card but with auto-download message
+        const ui = document.getElementById('first-run-ui');
+        if (ui) {
+            ui.style.display = 'flex';
+            // Replace content with download progress message
+            ui.innerHTML = `
+                <h2 style="margin-bottom:8px;">🎮 ${window.GAME_NAME || '游戏'}</h2>
+                <div class="loading-spinner"></div>
+                <p style="color:var(--text-muted);margin-top:16px;">📥 正在自动下载游戏文件...</p>
+                <p style="font-size:0.8rem;color:var(--text-dim);margin-top:8px;">
+                    首次游玩会自动下载，之后将使用本地缓存。
+                </p>
+            `;
+        }
+        document.getElementById('player-area').style.display = 'none';
+    }
 
     function showFirstRunUI() {
         document.getElementById('first-run-ui').style.display = 'flex';

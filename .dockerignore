@@ -1,0 +1,44 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# App data (mounted volumes at runtime)
+web/data/*.db
+web/jsdos_cache/
+web/uploads_temp/
+web/certs/
+
+# CI / docs only
+.github/
+*.md
+!web/README.md
+CHANGELOG.md
+DEVELOPMENT.md
+
+# Large game files (fetched on demand)
+bin/*.zip
+img/*.png
+img/*.jpg
+img/*.webp
+
+# Environment
+.env
+.env.local
