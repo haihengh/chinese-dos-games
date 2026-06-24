@@ -412,6 +412,50 @@ def create_app():
                 'reply': None,
             }), 500
 
+    # ─── API: TTS (Text-to-Speech) ───
+
+    @app.route('/api/tts', methods=['POST'])
+    def api_tts():
+        """Generate speech audio using Edge TTS (free neural voices).
+
+        Accepts: { text: str, voice?: str, rate?: str }
+        Returns: audio/mpeg binary (MP3)
+        """
+        import io
+        import edge_tts
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Invalid JSON'}), 400
+
+        text = (data.get('text') or '').strip()
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+        if len(text) > 5000:
+            return jsonify({'error': 'Text too long (max 5000 chars)'}), 400
+
+        voice = data.get('voice', 'zh-CN-XiaoxiaoNeural')
+        rate = data.get('rate', '+10%')
+
+        try:
+            communicate = edge_tts.Communicate(text, voice, rate=rate)
+            mp3_data = io.BytesIO()
+            # edge-tts streams audio chunks; collect them all
+            for chunk in communicate.stream_sync():
+                if chunk['type'] == 'audio':
+                    mp3_data.write(chunk['data'])
+            mp3_data.seek(0)
+
+            return send_file(
+                mp3_data,
+                mimetype='audio/mpeg',
+                as_attachment=False,
+                download_name='speech.mp3',
+            )
+        except Exception as e:
+            app.logger.error(f"TTS error: {e}")
+            return jsonify({'error': 'TTS generation failed'}), 500
+
     # ─── API: Admin ───
 
     @app.route('/api/admin/scan', methods=['POST'])

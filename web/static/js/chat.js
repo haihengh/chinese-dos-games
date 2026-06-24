@@ -1093,7 +1093,12 @@
     //  Text-to-Speech
     // ═══════════════════════════════════════════════════════════
 
-    // Pre-load voices — they load asynchronously in most browsers
+    // TTS engine preference: 'edge' (neural, server-side) | 'browser' (built-in)
+    const TTS_ENGINE_KEY = 'chat_tts_engine';
+    let _ttsEngine = localStorage.getItem(TTS_ENGINE_KEY) || 'edge';  // default to Edge neural
+    let _activeAudio = null;  // Currently playing Edge TTS Audio element
+
+    // Pre-load browser voices — they load asynchronously
     let _voicesLoaded = false;
     let _cachedZhVoice = null;
 
@@ -1102,26 +1107,34 @@
         const voices = window.speechSynthesis.getVoices();
         if (voices.length > 0) {
             _voicesLoaded = true;
+            // Prefer a high-quality neural/natural voice, then any zh-CN/zh-TW
             _cachedZhVoice = voices.find(
+                v => (v.lang.startsWith('zh-CN') || v.lang.startsWith('zh-TW'))
+                    && (v.name.includes('Natural') || v.name.includes('Neural') || v.name.includes('Premium'))
+            ) || voices.find(
                 v => v.lang.startsWith('zh-CN') || v.lang.startsWith('zh-TW')
             ) || null;
+            if (_cachedZhVoice) {
+                console.log('[chat.js] Browser TTS voice:', _cachedZhVoice.name, _cachedZhVoice.lang);
+            }
         }
     }
 
-    // Listen for async voice loading
     if (window.speechSynthesis) {
         preloadVoices();
         window.speechSynthesis.addEventListener('voiceschanged', preloadVoices);
     }
 
-    function speakText(text) {
-        if (!window.speechSynthesis) return;
+    /**
+     * Speak text using the selected TTS engine.
+     * - Edge TTS: sends text to server, plays returned MP3 (neural, natural)
+     * - Browser TTS: uses Web Speech API (offline, lower quality)
+     */
+    async function speakText(text) {
+        if (!state.ttsEnabled) return;
 
-        // Cancel any ongoing speech
-        window.speechSynthesis.cancel();
-
-        // Try loading voices if not yet done
-        if (!_voicesLoaded) preloadVoices();
+        // Stop any ongoing audio
+        stopSpeaking();
 
         // Strip markdown
         const cleanText = text
@@ -1129,24 +1142,94 @@
             .replace(/`([^`]+)`/g, '$1')
             .replace(/\n{2,}/g, '。')
             .replace(/\n/g, '。')
-            .replace(/[#*\-–—>]/g, '');
+            .replace(/[#*\-–—>]/g, '')
+            .trim();
 
-        // Split long text into sentences for more reliable playback
-        const sentences = cleanText.split(/[。！？\.!\?]/).filter(s => s.trim());
-        if (sentences.length === 0) {
-            sentences.push(cleanText);
+        if (!cleanText) return;
+
+        if (_ttsEngine === 'edge') {
+            await speakWithEdgeTTS(cleanText);
+        } else {
+            speakWithBrowserTTS(cleanText);
+        }
+    }
+
+    async function speakWithEdgeTTS(text) {
+        const btn = document.getElementById('btn-chat-tts');
+        if (btn) {
+            btn.classList.add('tts-speaking');
+            btn.title = 'Edge TTS 播报中...';
         }
 
-        // Speak each sentence
+        try {
+            const resp = await fetch('/api/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text, voice: 'zh-CN-XiaoxiaoNeural', rate: '+15%' }),
+            });
+
+            if (!resp.ok) {
+                throw new Error('TTS request failed: ' + resp.status);
+            }
+
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            _activeAudio = new Audio(url);
+            _activeAudio.volume = 1.0;
+
+            _activeAudio.addEventListener('ended', () => {
+                URL.revokeObjectURL(url);
+                _activeAudio = null;
+                updateTTSSpeakingState(false);
+            });
+
+            _activeAudio.addEventListener('error', () => {
+                URL.revokeObjectURL(url);
+                _activeAudio = null;
+                updateTTSSpeakingState(false);
+            });
+
+            await _activeAudio.play();
+        } catch (e) {
+            console.warn('[chat.js] Edge TTS failed, falling back to browser TTS:', e.message);
+            // Fall back to browser TTS
+            if (btn) btn.classList.remove('tts-speaking');
+            speakWithBrowserTTS(text);
+        }
+    }
+
+    function speakWithBrowserTTS(text) {
+        if (!window.speechSynthesis) return;
+
+        if (!_voicesLoaded) preloadVoices();
+
+        const btn = document.getElementById('btn-chat-tts');
+        if (btn && _ttsEngine !== 'edge') {
+            btn.classList.add('tts-speaking');
+            btn.title = '浏览器 TTS 播报中...';
+        }
+
+        // Split into sentences for more reliable browser TTS playback
+        const sentences = text.split(/[。！？\.!\?]/).filter(s => s.trim());
+        if (sentences.length === 0) {
+            sentences.push(text);
+        }
+
         let delay = 0;
-        sentences.forEach((sentence) => {
+        const totalSentences = sentences.length;
+        let completed = 0;
+
+        sentences.forEach((sentence, i) => {
             const trimmed = sentence.trim();
-            if (!trimmed) return;
+            if (!trimmed) {
+                completed++;
+                return;
+            }
 
             setTimeout(() => {
                 const utterance = new SpeechSynthesisUtterance(trimmed);
                 utterance.lang = 'zh-CN';
-                utterance.rate = 0.9;
+                utterance.rate = 1.15;   // Slightly faster than default (was 0.9)
                 utterance.pitch = 1.0;
                 utterance.volume = 1.0;
 
@@ -1154,61 +1237,106 @@
                     utterance.voice = _cachedZhVoice;
                 }
 
+                utterance.onend = () => {
+                    completed++;
+                    if (completed >= totalSentences) {
+                        updateTTSSpeakingState(false);
+                    }
+                };
+                utterance.onerror = () => {
+                    completed++;
+                    if (completed >= totalSentences) {
+                        updateTTSSpeakingState(false);
+                    }
+                };
+
                 window.speechSynthesis.speak(utterance);
             }, delay);
 
-            // Estimate delay based on text length (rough: ~4 chars/sec for Chinese)
-            delay += Math.max(1500, trimmed.length * 250);
+            // Faster pacing: ~3 chars/sec for Chinese
+            delay += Math.max(800, trimmed.length * 200);
         });
-
-        // Update button state while speaking
-        updateTTSSpeakingState(true, delay);
     }
 
-    function updateTTSSpeakingState(speaking, totalDelay) {
+    function stopSpeaking() {
+        // Stop Edge TTS audio
+        if (_activeAudio) {
+            _activeAudio.pause();
+            _activeAudio = null;
+        }
+        // Stop browser TTS
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+    }
+
+    function updateTTSSpeakingState(speaking) {
         const btn = document.getElementById('btn-chat-tts');
         if (!btn) return;
 
-        if (speaking && state.ttsEnabled) {
+        if (speaking) {
             btn.classList.add('tts-speaking');
-            btn.title = '正在播报...';
-            // Clear speaking state after estimated total time
-            setTimeout(() => {
-                btn.classList.remove('tts-speaking');
-                btn.title = state.ttsEnabled ? '语音播报: 开' : '语音播报: 关';
-            }, totalDelay + 500);
+        } else {
+            btn.classList.remove('tts-speaking');
+            updateTTSButtonTitle();
+        }
+    }
+
+    function updateTTSButtonTitle() {
+        const btn = document.getElementById('btn-chat-tts');
+        if (!btn) return;
+        if (!state.ttsEnabled) {
+            btn.title = '语音播报: 关';
+        } else if (_ttsEngine === 'edge') {
+            btn.title = '语音播报: Edge TTS (神经网络) — 点击切换';
+        } else {
+            btn.title = '语音播报: 浏览器内置 — 点击切换';
         }
     }
 
     function toggleTTS() {
-        state.ttsEnabled = !state.ttsEnabled;
-        localStorage.setItem('chat_tts_enabled', state.ttsEnabled);
-
+        // Cycle: off → edge → browser → off
         if (!state.ttsEnabled) {
-            // Stop any ongoing speech when toggling off
-            window.speechSynthesis.cancel();
-            const btn = document.getElementById('btn-chat-tts');
-            if (btn) btn.classList.remove('tts-speaking');
+            state.ttsEnabled = true;
+            _ttsEngine = 'edge';
+        } else if (_ttsEngine === 'edge') {
+            _ttsEngine = 'browser';
+        } else {
+            // browser → off
+            state.ttsEnabled = false;
+            stopSpeaking();
         }
+
+        localStorage.setItem('chat_tts_enabled', state.ttsEnabled);
+        localStorage.setItem(TTS_ENGINE_KEY, _ttsEngine);
 
         const btn = document.getElementById('btn-chat-tts');
         if (btn) {
+            btn.classList.remove('tts-speaking');
             btn.classList.toggle('active', state.ttsEnabled);
-            btn.title = state.ttsEnabled ? '语音播报: 开' : '语音播报: 关';
+            // Show engine indicator in button text
+            if (!state.ttsEnabled) {
+                btn.textContent = '🔊';
+            } else if (_ttsEngine === 'edge') {
+                btn.textContent = '🔊';
+                btn.style.color = '';
+            } else {
+                btn.textContent = '🔉';
+            }
+            updateTTSButtonTitle();
         }
 
-        // Test-speak a short phrase so user knows it's working
-        if (state.ttsEnabled) {
-            window.DOS.App.showToast('🔊 语音播报已开启', 'success');
-            // Quick test
-            const testUtterance = new SpeechSynthesisUtterance('语音播报已开启');
-            testUtterance.lang = 'zh-CN';
-            testUtterance.rate = 1.0;
-            testUtterance.volume = 0.8;
-            if (_cachedZhVoice) testUtterance.voice = _cachedZhVoice;
-            window.speechSynthesis.speak(testUtterance);
-        } else {
+        // Show toast for current state
+        if (!state.ttsEnabled) {
             window.DOS.App.showToast('🔇 语音播报已关闭', 'info');
+        } else if (_ttsEngine === 'edge') {
+            window.DOS.App.showToast('🔊 Edge TTS 神经网络语音 (免费)', 'success');
+            // Quick test with Edge TTS
+            speakText('语音播报已开启');
+        } else {
+            window.DOS.App.showToast('🔉 浏览器内置语音 (离线)', 'info');
+            // Quick browser TTS test
+            speakText('语音播报已开启');
         }
     }
 
@@ -1261,9 +1389,7 @@
     window.addEventListener('beforeunload', () => {
         saveHistory();
         stopAutoScreenshot();
-        if (window.speechSynthesis) {
-            window.speechSynthesis.cancel();
-        }
+        stopSpeaking();
     });
 
     // ═══════════════════════════════════════════════════════════

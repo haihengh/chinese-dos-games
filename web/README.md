@@ -364,7 +364,7 @@ The game page includes an AI chat companion **"Little Dragon"** that sees your g
 |---------------|-------------------|
 | 🖼️ **游戏截屏** | 使用 js-dos 原生 API (`ci.screenshot()`) 捕获游戏画面，正确读取 WebGL 缓冲区 · Uses js-dos native API for proper WebGL buffer capture |
 | 🎤 **语音输入** | 浏览器语音识别 (Web Speech API)，支持中文 · Browser speech recognition (Chinese) |
-| 🔊 **语音播报** | AI 回复自动朗读 (TTS)，支持中文语音 · AI responses read aloud with Chinese voices |
+| 🔊 **语音播报** | Edge TTS 神经网络语音 (免费, 自然) + 浏览器内置 TTS 后备 · Neural Edge TTS (free) + browser TTS fallback |
 | 📌 **面板固定** | 固定聊天面板，隐藏遮罩层，可边玩边看 AI 回复 · Pin panel to keep it open while playing the game |
 | ⚙️ **自定义 AI** | 支持自备 API 密钥，兼容 Anthropic 和 OpenAI 接口 · Bring your own API key, Anthropic & OpenAI-compatible |
 | 💬 **对话记忆** | 对话历史保存在浏览器 localStorage，刷新不丢失 · Chat history persisted in localStorage |

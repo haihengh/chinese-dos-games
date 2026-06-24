@@ -25,6 +25,13 @@ All notable changes to this project will be documented in this file.
   - Unpinned: original behavior (auto-hide on outside click)
   - State persisted to `localStorage.chat_pinned`
 
+- **Edge TTS Neural Voice** — High-quality free Chinese TTS via Microsoft Edge TTS
+  - Server-side `/api/tts` endpoint using `edge-tts` Python package
+  - `zh-CN-XiaoxiaoNeural` voice — warm, natural female Chinese voice
+  - Browser built-in TTS kept as fallback with improved settings (rate 1.15, better voice selection)
+  - TTS button cycles: Off → Edge TTS (neural) → Browser TTS (offline)
+  - Engine preference persisted to localStorage
+
 ### Changed
 - **Screenshot Capture Architecture**: Two-layer approach
   - Primary: `window.DOS.Game.captureScreenshot()` via js-dos `ci.screenshot()` (game.js)
@@ -37,6 +44,10 @@ All notable changes to this project will be documented in this file.
   - `--port N`: custom port
 
 ### Files Modified
+- `web/app.py`
+  - Changed `app.run()` to support `--ssl` and `--port` CLI arguments
+  - Added `/api/tts` endpoint (Edge TTS neural voice)
+
 - `web/static/js/game.js`
   - Added `captureGameScreenshot()` async function using `dosCI.screenshot()`
   - Exposed `window.DOS.Game` namespace (`captureScreenshot`, `dosCI` getter)
@@ -48,12 +59,12 @@ All notable changes to this project will be documented in this file.
   - Updated `togglePanel()` to suppress backdrop when pinned
   - Updated backdrop click, Escape key to respect pin state
   - All screenshot call sites now `await`
+  - Rewrote TTS: Edge TTS primary (neural), browser TTS fallback (rate 1.15, better voice selection)
+  - TTS button cycles: Off → Edge TTS → Browser TTS
 
 - `web/static/css/chat.css`
   - Added `#btn-chat-pin.active` style (amber glow)
 
-- `web/app.py`
-  - Changed `app.run()` to support `--ssl` and `--port` CLI arguments
-
 ### Dependencies
 - Added `pyOpenSSL` (required for Flask `ssl_context='adhoc'`)
+- `edge-tts` (used for `/api/tts` endpoint, already installed)
