@@ -419,11 +419,20 @@ def create_app():
 
     @app.route('/api/ai/status')
     def ai_status():
-        """Return whether AI chat is available (server or user-provided key)."""
+        """Return whether AI chat is available (server, user key, or local AI)."""
+        import os
+        ollama_url = os.environ.get('OLLAMA_BASE_URL', '')
+        local_ai_enabled = bool(ollama_url) and os.environ.get('LOCAL_AI_DEFAULT', '').lower() == 'true'
+        local_model = os.environ.get('LOCAL_AI_MODEL', 'gemma4:e4b')
+
         return jsonify({
             'server_configured': bool(Config.ANTHROPIC_API_KEY),
             'server_model': Config.ANTHROPIC_MODEL,
-            'user_can_configure': True,  # Users can always bring their own key
+            'user_can_configure': True,
+            # Local AI
+            'local_ai_available': bool(ollama_url),
+            'local_ai_default': local_ai_enabled,
+            'local_ai_model': local_model if local_ai_enabled else None,
         })
 
     @app.route('/api/ai/chat', methods=['POST'])
@@ -453,7 +462,7 @@ def create_app():
         provider = data.get('provider', '').strip() or None
 
         # Validate provider
-        if provider and provider not in ('anthropic', 'openai'):
+        if provider and provider not in ('anthropic', 'openai', 'ollama'):
             return jsonify({'error': f'Invalid provider: {provider}'}), 400
 
         if not messages or not isinstance(messages, list):

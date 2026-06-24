@@ -1,0 +1,105 @@
+# ─── Chinese DOS Games + Local AI (Ollama + Gemma 4 E4B) ───
+#   docker compose -f docker-compose.local-ai.yml up -d
+#   → No API key needed — AI runs entirely on your machine
+#
+# Requirements:
+#   - 8GB+ RAM (16GB recommended)
+#   - ~3GB disk for the Gemma model (downloaded on first start)
+
+version: "3.8"
+
+services:
+  # ── Ollama: local LLM inference engine ──
+  ollama:
+    image: ollama/ollama:latest
+    container_name: dos-games-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"  # Expose for debugging; internal network also works
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_HOST=0.0.0.0
+    # Uncomment for GPU acceleration (NVIDIA):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Model puller: ensures Gemma is downloaded at startup ──
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: dos-games-ollama-pull
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for ollama..."
+        sleep 5
+        echo "Pulling gemma4:e4b model (~3GB, one-time)..."
+        ollama pull gemma4:e4b
+        echo "Model ready!"
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    volumes:
+      - ollama-models:/root/.ollama
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "1"
+
+  # ── Chinese DOS Games Web ──
+  dos-games:
+    build: .
+    image: haihengh/chinese-dos-games:latest
+    container_name: dos-games
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    volumes:
+      - dos-games-bin:/app/bin
+      - dos-games-img:/app/img
+      - dos-games-cache:/app/web/jsdos_cache
+      - dos-games-data:/app/web/data
+    environment:
+      # ── Local AI (auto-detected, no API key needed) ──
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - LOCAL_AI_MODEL=${LOCAL_AI_MODEL:-gemma4:e4b}
+      - LOCAL_AI_DEFAULT=${LOCAL_AI_DEFAULT:-true}
+
+      # ── Cloud AI fallback (optional) ──
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+
+      # ── Game download mirror ──
+      - GAME_DOWNLOAD_BASE=${GAME_DOWNLOAD_BASE:-}
+
+      # ── Auth ──
+      - SECRET_KEY=${SECRET_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+
+    depends_on:
+      - ollama
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  ollama-models:
+  dos-games-bin:
+  dos-games-img:
+  dos-games-cache:
+  dos-games-data:

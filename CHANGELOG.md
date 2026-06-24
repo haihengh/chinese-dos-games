@@ -101,6 +101,13 @@ The AI assistant has been renamed from "小龙" (Little Dragon) to **"Wawa"** wi
   - `start.bat` (Windows): checks Python, installs deps, generates SSL cert, opens browser
   - `start.sh` (Mac/Linux): same, cross-platform
 
+- **Local AI Bundle (Ollama + Gemma 4 E4B)** — Run AI completely offline
+  - `docker-compose.local-ai.yml`: adds ollama + auto-pulls gemma4:e4b on first start
+  - Auto-detection: if `OLLAMA_BASE_URL` is set, defaults to local AI (no API key needed)
+  - Gemma 4 E4B: 4.5B params, vision-capable, 128K context, ~3GB model
+  - Falls back to cloud AI if local unavailable
+  - `/api/ai/status` reports local AI availability; chat UI shows 🏠 indicator
+
 - **Release Process**
   - `release.sh`: builds multi-arch Docker image, pushes to Docker Hub + GHCR, creates GitHub Release draft
   - `RELEASE.md`: full release documentation with manual steps, env vars, China mirror setup, user install commands

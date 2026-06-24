@@ -61,6 +61,9 @@
         // Server status
         serverConfigured: false,
         serverModel: '',
+        localAI: false,
+        localAIDefault: false,
+        localAIModel: null,
         // User AI settings (from localStorage)
         settings: loadSettings(),
     };
@@ -94,7 +97,7 @@
     }
 
     function isAIAvailable() {
-        return state.serverConfigured || hasUserConfig();
+        return state.serverConfigured || hasUserConfig() || state.localAIDefault;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -110,6 +113,9 @@
             const data = await resp.json();
             state.serverConfigured = data.server_configured;
             state.serverModel = data.server_model || '';
+            state.localAI = data.local_ai_available || false;
+            state.localAIDefault = data.local_ai_default || false;
+            state.localAIModel = data.local_ai_model || null;
         } catch (e) {
             state.serverConfigured = false;
         }
@@ -508,9 +514,13 @@
         els.statusDot.className = 'chat-status-dot';
         if (isAIAvailable()) {
             els.statusDot.classList.add('connected');
-            els.statusDot.title = hasUserConfig()
-                ? '使用自定义 API 密钥'
-                : '使用服务器 AI 配置';
+            if (hasUserConfig()) {
+                els.statusDot.title = '使用自定义 API 密钥';
+            } else if (state.localAIDefault) {
+                els.statusDot.title = `本地 AI: ${state.localAIModel || 'gemma4:e4b'}`;
+            } else {
+                els.statusDot.title = '使用服务器 AI 配置';
+            }
         } else {
             els.statusDot.classList.add('disabled');
             els.statusDot.title = 'AI 未配置 — 点击 ⚙️ 设置 API 密钥';
@@ -523,6 +533,9 @@
             els.configHint.textContent = state.settings.provider === 'openai'
                 ? '🔑 自定义 OpenAI 密钥'
                 : '🔑 自定义 Anthropic 密钥';
+            els.configHint.style.color = 'var(--success)';
+        } else if (state.localAIDefault) {
+            els.configHint.textContent = '🏠 本地 AI (' + (state.localAIModel || 'gemma4:e4b') + ')';
             els.configHint.style.color = 'var(--success)';
         } else if (state.serverConfigured) {
             els.configHint.textContent = '🖥️ 使用服务器密钥';
@@ -957,11 +970,15 @@
                     我是你的 AI 游戏助手。<br>
                     我可以看到你的游戏画面，帮你记住任务、解谜、提供攻略建议，或者只是陪你聊天。
                 </div>
-                ${!isAIAvailable() ? `
+                ${state.localAIDefault ? `
+                <div class="chat-welcome-config-note" style="border-color:rgba(34,197,94,0.3);background:rgba(34,197,94,0.08);color:var(--success);">
+                    🏠 本地 AI 已就绪<br>
+                    <small>使用 ${state.localAIModel || 'gemma4:e4b'} (Ollama)，完全离线运行</small>
+                </div>` : (!isAIAvailable() ? `
                 <div class="chat-welcome-config-note">
                     ⚠️ 尚未配置 AI 服务<br>
                     <small>点击上方 ⚙️ 按钮设置你的 API 密钥，或让管理员配置服务器密钥</small>
-                </div>` : ''}
+                </div>` : '')}
                 <div class="chat-welcome-hints">
                     <button class="chat-hint-btn" data-hint="这个游戏怎么玩？">💡 这个游戏怎么玩？</button>
                     <button class="chat-hint-btn" data-hint="帮我看看现在应该做什么">👀 帮我看看现在应该做什么</button>

@@ -15,11 +15,10 @@
 
 ## 新增功能 · Recent Updates
 
-✨ **Docker 部署 + 游戏按需下载** (2025-06-23)
-- 🐳 支持 Docker 一键部署 (`docker run` / `docker compose up`)
-- ☁️ 游戏按需下载：首次游玩自动从上游获取，无需 35GB 全量下载
-- 🪟 一键启动脚本：`start.bat` (Windows) / `start.sh` (Mac/Linux)
-- 📦 发布流程：`release.sh` + `RELEASE.md`
+✨ **本地 AI + Docker 部署** (2025-06-24)
+- 🏠 内置 Ollama + Gemma 4 E4B 本地 AI，完全离线运行
+- 🐳 Docker 一键部署，支持云端/本地两种 AI 模式
+- ☁️ 游戏按需下载：首次游玩自动获取，无需 35GB 全量下载
 
 ✨ **AI 游戏助手 — Wawa 🐱** (2025-06-23)
 - 🎯 **游戏感知**: AI 自动获知当前游戏名称、类型、操作按键和秘籍

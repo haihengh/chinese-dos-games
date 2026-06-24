@@ -53,13 +53,31 @@ def _resolve_config(api_key=None, base_url=None, model=None, provider=None):
     """Resolve effective config: per-request overrides > server defaults.
 
     Returns (api_key, base_url, model, provider, error).
-    provider is 'anthropic' or 'openai'.
+    provider is 'anthropic', 'openai', or 'ollama'.
     """
     effective_provider = provider or 'anthropic'
     effective_key = api_key or Config.ANTHROPIC_API_KEY
     effective_model = model or Config.ANTHROPIC_MODEL
 
-    if effective_provider == 'openai':
+    # ── Local AI (Ollama) auto-detection ──
+    ollama_url = os.environ.get('OLLAMA_BASE_URL', '')
+    local_ai_default = os.environ.get('LOCAL_AI_DEFAULT', '').lower() == 'true'
+    local_ai_model = os.environ.get('LOCAL_AI_MODEL', 'gemma4:e4b')
+
+    # If no user key + no server key + ollama available → use local AI
+    if not effective_key and ollama_url and local_ai_default:
+        effective_provider = 'ollama'
+        effective_url = ollama_url
+        effective_model = model or local_ai_model
+        effective_key = 'ollama'  # Ollama doesn't need a real key
+        logger.info(f"Using local AI: {effective_url} model={effective_model}")
+
+    if effective_provider == 'ollama':
+        effective_url = base_url or ollama_url or 'http://localhost:11434/v1'
+        effective_model = model or local_ai_model
+        if not effective_key:
+            effective_key = 'ollama'  # No auth needed
+    elif effective_provider == 'openai':
         effective_url = base_url or 'https://api.openai.com/v1'
     else:
         effective_url = base_url or None  # Anthropic SDK uses default
@@ -67,7 +85,8 @@ def _resolve_config(api_key=None, base_url=None, model=None, provider=None):
     if not effective_key:
         return None, None, None, None, (
             "AI 未配置。请在聊天设置中填写 API 密钥，"
-            "或设置服务器环境变量 ANTHROPIC_API_KEY"
+            "或设置服务器环境变量 ANTHROPIC_API_KEY，"
+            "或启动本地 AI 版本 (docker compose -f docker-compose.local-ai.yml up)"
         )
 
     return effective_key, effective_url, effective_model, effective_provider, None
@@ -381,7 +400,8 @@ def chat_with_ai(messages, screenshot_base64=None,
     system_prompt = _build_system_prompt(game_context)
 
     try:
-        if prov == 'openai':
+        if prov == 'openai' or prov == 'ollama':
+            # Ollama is OpenAI-compatible — same HTTP API path
             return _call_openai(key, url, mdl, messages, screenshot_base64, system_prompt)
         else:
             return _call_anthropic(key, url, mdl, messages, screenshot_base64, system_prompt)

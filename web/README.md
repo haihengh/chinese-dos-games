@@ -27,18 +27,15 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 
 ### 方式一：Docker（推荐 · Recommended）
 
+**云端 AI 版本**（需 API 密钥）:
 ```bash
-# 一行命令启动，游戏自动按需下载
-docker run -d -p 5000:5000 \
-    -v dos-games-bin:/app/bin \
-    -v dos-games-cache:/app/web/jsdos_cache \
-    -e ANTHROPIC_API_KEY=sk-ant-... \
-    --name dos-games \
-    haihengh/chinese-dos-games:latest
+docker run -d -p 5000:5000 -v dos-games-bin:/app/bin haihengh/chinese-dos-games:latest
+```
 
-# 或使用 docker-compose
-curl -O https://raw.githubusercontent.com/haihengh/chinese-dos-games/master/docker-compose.yml
-docker compose up -d
+**本地 AI 版本**（无需 API 密钥，完全离线）:
+```bash
+docker compose -f docker-compose.local-ai.yml up -d
+# 首次启动自动下载 Gemma 4 E4B 模型 (~3GB)，之后完全本地运行
 ```
 
 访问 · Visit: **https://localhost:5000**
@@ -385,7 +382,8 @@ The game page includes an AI chat companion **"Wawa"** that sees your game scree
 | 🎤 **语音输入** | 浏览器语音识别 (Web Speech API)，支持中文 · Browser speech recognition (Chinese) |
 | 🔊 **语音播报** | Edge TTS 神经网络语音 (普通话/广东话, 男/女声可选) + 浏览器 TTS 后备 · Neural Edge TTS (Mandarin/Cantonese, M/F voice) + browser fallback |
 | 📌 **面板固定** | 固定聊天面板，隐藏遮罩层，可边玩边看 AI 回复 · Pin panel to keep it open while playing the game |
-| ⚙️ **自定义 AI** | 支持自备 API 密钥，兼容 Anthropic 和 OpenAI 接口 · Bring your own API key, Anthropic & OpenAI-compatible |
+| 🏠 **本地 AI** | 内置 Ollama + Gemma 4 E4B 支持，完全离线运行，无需 API 密钥 · Built-in Ollama + Gemma 4 E4B, fully offline, no API key needed |
+| ⚙️ **自定义 AI** | 也支持 Anthropic / OpenAI / DeepSeek 云 API · Also supports cloud APIs (Anthropic, OpenAI, DeepSeek) |
 | 🖥️ **页面不遮挡** | 打开聊天面板时整个页面向右平移，游戏画面不被遮挡 · Page shifts right when chat opens, game stays fully visible |
 | 🎯 **游戏感知** | AI 自动获知当前游戏名称、类型、操作按键和秘籍 · AI knows current game name, genre, controls & cheats |
 | 🗑️ **缓存管理** | 一键清除所有聊天记录、AI 设置和偏好 · One-click clear all chat history, AI settings, and preferences |
