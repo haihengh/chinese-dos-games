@@ -4,7 +4,7 @@
 FROM python:3.11-slim AS builder
 WORKDIR /build
 COPY web/requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --target=/install -r requirements.txt
 
 FROM python:3.11-slim
 LABEL org.opencontainers.image.title="Chinese DOS Games Web"
@@ -21,10 +21,10 @@ WORKDIR /app
 # Python path
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/root/.local/bin:$PATH"
+    PYTHONPATH="/install"
 
 # Copy installed packages from builder
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /install /install
 
 # Copy app code
 COPY web/ /app/web/
