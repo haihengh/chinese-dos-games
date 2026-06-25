@@ -17,16 +17,20 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 # ── Mirror configuration ──
-# Default: direct GitHub. Set GAME_DOWNLOAD_BASE to override.
+# Default: upstream game host. Set GAME_DOWNLOAD_BASE to override.
 # Examples:
-#   Inside China: export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://raw.githubusercontent.com/rwv/chinese-dos-games/refs/heads/master/bin/
+#   Inside China: export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://dos-bin.zczc.cz/
 #   Self-hosted:  export GAME_DOWNLOAD_BASE=https://my-cdn.example.com/games/
+_DEFAULT_MIRROR = 'https://dos-bin.zczc.cz/'
+
+# GitHub raw is a fallback for cases where the upstream has game files
 _GITHUB_RAW = (
     'https://raw.githubusercontent.com/rwv/chinese-dos-games/refs/heads/master/bin/'
 )
 
 MIRRORS = [
     os.environ.get('GAME_DOWNLOAD_BASE', '').rstrip('/') + '/' if os.environ.get('GAME_DOWNLOAD_BASE') else None,
+    _DEFAULT_MIRROR,
     _GITHUB_RAW,
 ]
 MIRRORS = [m for m in MIRRORS if m]  # Filter out None entries
