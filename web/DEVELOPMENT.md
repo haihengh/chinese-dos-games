@@ -56,7 +56,8 @@ python app.py
 
 - **`js/game.js`** — Main game player logic
   - Bundle preparation and caching
-  - Save/restore functionality
+  - Save/restore functionality (local IndexedDB + localStorage tracking)
+  - 4K / high-DPI display scaling (baseline 1920px, up to 2.5x)
   - Player control handlers
   - Uses js-dos v8 via CDN
 
@@ -85,11 +86,14 @@ python app.py
 
 - **`js/chat.js`** — AI chat frontend (Wawa 🐱)
   - Chat panel with pin, resize, settings, keyboard blocker
+  - Auto-open on first visit (user can dismiss; preference persisted)
+  - AI personality presets: warm (default) / concise, selectable in settings
   - Canvas screenshot via js-dos `ci.screenshot()` (WebGL-safe)
   - Game context injection (`window.GAME_META` → server)
   - Voice input (Web Speech API), voice output (Edge TTS + browser fallback)
   - TTS settings: Mandarin/Cantonese, male/female, adjustable rate
-  - localStorage persistence: history, AI config, TTS prefs, pin state, panel width
+  - Differentiated network error messages (connection, HTTP 4xx, HTTP 5xx)
+  - localStorage persistence: history, AI config, personality, TTS prefs, pin state, panel width, `chat_default_open`
   - Document-level capture-phase `keydown` blocker (no emulator pause needed)
 
 ### Backend (`services/`)
@@ -131,7 +135,9 @@ python app.py
 
 - **`ai_service.py`** — AI chat proxy (Wawa)
   - Anthropic Claude API (native SDK) + OpenAI-compatible (HTTP REST)
-  - Per-request API key/base URL/model overrides
+  - Per-request API key/base URL/model/personality overrides
+  - Personality presets system: `PERSONALITY_PRESETS` dict with `wawa` (热情) and `wawa-concise` (简洁)
+  - `get_personality_presets()` and `get_system_prompt()` helper functions
   - Game context injection into system prompt (name, type, controls, cheats)
   - Screenshot with auto-retry for non-vision models (DeepSeek R1 fallback)
   - Detailed error passthrough from provider APIs
@@ -258,8 +264,9 @@ The AI chat feature uses a **server-side proxy** pattern:
 
 ```
 Browser (chat.js)
-  → POST /api/ai/chat { messages, screenshot?, api_key?, provider?, model?, base_url? }
+  → POST /api/ai/chat { messages, screenshot?, api_key?, provider?, model?, base_url?, personality? }
     → ai_service.py: chat_with_ai()
+      → Builds game-aware system prompt from PERSONALITY_PRESETS[personality || 'wawa']
       → Anthropic SDK (native) or OpenAI REST API
     ← { reply, usage?, error? }
   ← Render message bubble + optional TTS
@@ -270,11 +277,95 @@ Browser (chat.js)
 - Users can override with their own key (stored in browser localStorage)
 - API key never leaks to other users
 - Single endpoint for both Anthropic and OpenAI-compatible providers
+- Personality preset selection without exposing system prompts to the client
 
 **Adding a new provider:**
 1. Add provider handling in `ai_service.py` — create a `_call_PROVIDERNAME()` function
 2. Update `_resolve_config()` to handle the new provider string
 3. The frontend settings dropdown auto-populates from the provider list
+4. The personality system works across all providers — no per-provider changes needed
+
+**Adding a new personality preset:**
+1. Add an entry to `PERSONALITY_PRESETS` dict in `ai_service.py`
+2. That's it — the `/api/ai/personalities` endpoint auto-discovers all presets
+3. The UI dropdown renders all available presets without any frontend changes
+
+### 4K Display Scaling
+
+**File**: `web/static/js/game.js`
+
+The game page auto-scales for high-resolution and ultrawide displays:
+
+```javascript
+const BASELINE_WIDTH = 1920;
+let _displayScale = 1.0;
+
+function applyDisplayScale() {
+    const vw = window.innerWidth;
+    _displayScale = Math.max(1.0, vw / BASELINE_WIDTH);
+    _displayScale = Math.min(2.5, _displayScale);  // 2.5x max
+
+    const gamePage = document.querySelector('.game-page');
+    if (gamePage) {
+        gamePage.style.maxWidth = Math.round(1400 * _displayScale) + 'px';
+    }
+}
+
+applyDisplayScale();
+window.addEventListener('resize', applyDisplayScale);
+```
+
+This works on load and resize: never scales below 1.0 (1080p), caps at 2.5x (covers 5K/ultrawide). The `.game-page` CSS comment notes this JS-driven scaling.
+
+### Local Save Tracking
+
+**Files**: `web/static/js/game.js`, `web/templates/profile.html`
+
+Local IndexedDB saves are tracked via a localStorage marker so the profile page can show them alongside server saves:
+
+```javascript
+// game.js — on persist()
+function markGameSaved(kbSize) {
+    const index = JSON.parse(localStorage.getItem('saved_games_index') || '{}');
+    index[GAME_ID] = {
+        name: GAME_NAME,
+        save_kb: kbSize || '?',
+        updated_at: Date.now(),
+    };
+    localStorage.setItem('saved_games_index', JSON.stringify(index));
+}
+```
+
+The profile page merges local saves (💻 icon) with server saves (🎮 icon) in a combined list. Total save count includes both sources.
+
+### AI Personality Presets
+
+**Files**: `web/services/ai_service.py`, `web/static/js/chat.js`, `web/app.py`
+
+The AI assistant supports multiple personality presets:
+
+```python
+# ai_service.py
+PERSONALITY_PRESETS = {
+    'wawa': {
+        'name': 'Wawa 热情',
+        'prompt': """You are an expert retro game companion... full of personality, emoji, encouragement."""
+    },
+    'wawa-concise': {
+        'name': 'Wawa 简洁',
+        'prompt': """You are Wawa, a retro game assistant... 1-3 sentences, no fluff, no emoji."""
+    },
+}
+
+def get_system_prompt(personality=None):
+    key = personality if personality in PERSONALITY_PRESETS else 'wawa'
+    return PERSONALITY_PRESETS[key]['prompt']
+```
+
+Adding a new personality preset:
+1. Add an entry to `PERSONALITY_PRESETS` dict
+2. The UI auto-populates from `/api/ai/personalities` endpoint
+3. No frontend changes needed — the dropdown renders all available presets
 
 ### Adding a New Service
 

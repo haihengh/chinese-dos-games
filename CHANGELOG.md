@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] — 2025-06-24
+
+### AI Personality Presets
+The AI assistant Wawa now supports multiple personality presets, selectable from the chat settings panel.
+
+### Added
+- **AI Personality Presets** — Two response styles for Wawa:
+  - `wawa` (热情): The default warm, enthusiastic companion — full of personality, emoji, and encouragement
+  - `wawa-concise` (简洁): A terse, no-fluff assistant — 1-3 sentences max, no emoji, no small talk, direct answers only
+  - `/api/ai/personalities` endpoint returns available presets
+  - Personality dropdown in chat settings, persisted to localStorage
+  - `personality` field sent with every chat request; server maps to system prompt
+  - `services/ai_service.py`: `PERSONALITY_PRESETS` dict, `get_system_prompt()` function
+
+- **4K / High-DPI Display Scaling** — Game page auto-scales for large displays:
+  - Baseline: 1920px viewport = 1.0x scale (1400px max-width)
+  - Scales `.game-page` `max-width` proportionally up to 2.5x
+  - Triggered on load and window resize
+  - 4K displays (~2560px at 150% scaling) get ~1.33x, ultrawide/5K get more
+
+- **Local Save Tracking** — Profile page now shows local IndexedDB saves:
+  - `game.js`: `markGameSaved()` writes save metadata to `localStorage.saved_games_index`
+  - `profile.html`: Reads `saved_games_index`, merges local saves with server saves
+  - Local saves shown with 💻 icon, server saves with 🎮 icon
+  - Total save count combines both sources
+  - Save size and timestamp tracked per game
+
+- **Chat UX Improvements**:
+  - **Auto-open**: Chat panel opens by default on first visit; user can close it to dismiss permanently (preference stored in `localStorage.chat_default_open`)
+  - **Better error messages**: Differentiated messages for network failures, HTTP 4xx, HTTP 5xx, generic errors
+  - **Toggle persistence**: `togglePanel(forceOpen)` remembers user preference when manually toggled
+
+### Changed
+- **Profile page**: Save stats now include local browser saves alongside server saves
+- **Chat settings**: Personality dropdown added between provider config and TTS settings
+- **`chat_with_ai()` / `chat_with_claude()`**: Accept new `personality` parameter
+- **Legacy `SYSTEM_PROMPT`**: Now a derived reference to `PERSONALITY_PRESETS['wawa']['prompt']` — use `get_system_prompt()` for new code
+
+### Files Modified
+| File | Key Changes |
+|------|------------|
+| `web/services/ai_service.py` | `PERSONALITY_PRESETS` dict, `get_personality_presets()`, `get_system_prompt()`, personality param in `chat_with_ai()` and `_build_system_prompt()` |
+| `web/app.py` | `/api/ai/personalities` endpoint, `personality` field parsing in `/api/ai/chat` |
+| `web/static/js/chat.js` | Personality dropdown in settings, `personality` in settings state, auto-open logic, improved error messages, `chat_default_open` localStorage key |
+| `web/static/js/game.js` | `applyDisplayScale()` for 4K scaling, `markGameSaved()` for local save tracking, `SAVE_MARKER_KEY` constant |
+| `web/static/css/main.css` | Comment noting JS display scaling on `.game-page` |
+| `web/templates/profile.html` | Combined server + local saves display, `saved_games_index` parsing, source icons |
+
 ## [Unreleased] — 2025-06-23
 
 ### AI Assistant Rebrand

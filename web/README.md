@@ -15,6 +15,9 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 | ☁️ | **按需下载** — 无需 35GB 全量下载，只下载你要玩的游戏并缓存 | **On-Demand** — No 35GB upfront download; fetch + cache individual games |
 | 👤 | **用户系统** — 注册/登录以管理游戏存档（可选） | **User System** — Register/login to manage game saves (optional) |
 | 💾 | **本地存档** — 游戏进度自动保存到浏览器 IndexedDB，刷新后自动恢复 | **Local Saves** — Game progress auto-saves to browser IndexedDB, auto-restored on refresh |
+| 📍 | **存档追踪** — 个人中心同时显示本地和服务器存档，统一存档概览 | **Save Tracking** — Profile page shows both local IndexedDB saves and server saves in one view |
+| 🖥️ | **4K 显示屏适配** — 游戏页面在高分辨率/超宽屏上自动缩放，最高 2.5x | **4K Display Scaling** — Game page auto-scales on high-DPI/ultrawide displays, up to 2.5x |
+| 🎭 | **AI 个性预设** — Wawa 两种回复风格：热情（默认）和简洁（无废话直答） | **AI Personalities** — Two response styles: warm Wawa (default) and concise Wawa (no-fluff) |
 | 📤 | **上传游戏** — 拖拽上传自己的 DOS 游戏 ZIP 文件 | **Upload Games** — Drag-and-drop your own DOS game ZIP files |
 | 🔍 | **自动发现** — 后台定期扫描 `bin/` 目录，自动添加新游戏 | **Auto Discovery** — Background scanner detects new games in `bin/` |
 | 🌐 | **游戏元数据** — 从 Wikipedia 搜索游戏信息和介绍 | **Game Metadata** — Wikipedia search for game info & descriptions |
@@ -167,7 +170,8 @@ web/
 | `GET /api/games/types` | 游戏类型及数量 · Game types with counts |
 | `GET /api/metadata/<id>` | Wikipedia 元数据 · Wikipedia metadata |
 | `GET /api/ai/status` | AI 服务状态 · AI service status |
-| `POST /api/ai/chat` | AI 聊天（支持截屏）· AI chat (with screenshot) |
+| `GET /api/ai/personalities` | AI 个性预设列表 · Available personality presets |
+| `POST /api/ai/chat` | AI 聊天（支持截屏、个性选择）· AI chat (with screenshot, personality) |
 | `POST /api/tts` | 文字转语音 (Edge TTS 神经网络) · Text-to-speech (Edge TTS) |
 
 ### 需要登录 · Auth Required
@@ -385,7 +389,9 @@ The game page includes an AI chat companion **"Wawa"** that sees your game scree
 | 🏠 **本地 AI** | 内置 Ollama + Gemma 4 E4B 支持，完全离线运行，无需 API 密钥 · Built-in Ollama + Gemma 4 E4B, fully offline, no API key needed |
 | ⚙️ **自定义 AI** | 也支持 Anthropic / OpenAI / DeepSeek 云 API · Also supports cloud APIs (Anthropic, OpenAI, DeepSeek) |
 | 🖥️ **页面不遮挡** | 打开聊天面板时整个页面向右平移，游戏画面不被遮挡 · Page shifts right when chat opens, game stays fully visible |
+| 🎭 **个性预设** | 两种回复风格可选 — Wawa 热情（默认，活泼鼓励） / Wawa 简洁（1-3句，直接给答案） · Two personalities: warm (default, enthusiastic) / concise (1-3 sentences, direct) |
 | 🎯 **游戏感知** | AI 自动获知当前游戏名称、类型、操作按键和秘籍 · AI knows current game name, genre, controls & cheats |
+| 📐 **可调面板** | 左侧固定面板，可拖拽调整宽度 (280-480px)，首次访问自动展开 · Left-side fixed panel, resizable (280-480px), auto-opens on first visit |
 | 🗑️ **缓存管理** | 一键清除所有聊天记录、AI 设置和偏好 · One-click clear all chat history, AI settings, and preferences |
 | 💬 **对话记忆** | 对话历史保存在浏览器 localStorage，刷新不丢失 · Chat history persisted in localStorage |
 | 📐 **可调面板** | 左侧固定面板，可拖拽调整宽度 (280-480px) · Left-side fixed panel, resizable (280-480px) |
@@ -410,6 +416,7 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."    # PowerShell
    - **API 密钥**: 你的 API 密钥
    - **模型名称**: 如 `claude-sonnet-4-20250514`、`gpt-4o`、`deepseek-chat`
    - **API 地址**: (OpenAI 模式可选) 如 `https://api.deepseek.com/v1`
+   - **AI 个性**: Wawa 热情（默认）或 Wawa 简洁（直答无废话）
    - **TTS 语音**: 普通话/广东话，男声/女声
    - **TTS 语速**: 慢速/标准/较快/快速
 5. 点击保存
@@ -436,6 +443,7 @@ User keys are stored in browser localStorage, only sent with chat requests.
         api_key: "sk-...",      // 可选 · Optional
         provider: "anthropic",   // 可选 · Optional
         model: "claude-...",     // 可选 · Optional
+        personality: "wawa",     // 可选 · Optional (wawa 热情 / wawa-concise 简洁)
       }
     → ai_service.py: 解析配置 → 调用 AI API
     → AI 回复 → 渲染消息气泡
@@ -446,12 +454,14 @@ User keys are stored in browser localStorage, only sent with chat requests.
 
 ### AI 系统提示 · System Prompt
 
-Wawa 被设定为一位熟悉 1980-90 年代中文 DOS 游戏的 AI 助手：
-- 默认使用简体中文回复
-- 保持回复简洁 (2-4 段)
-- 除非明确要求，否则只给提示不剧透
-- 能够分析游戏截屏中的文字、UI 和游戏状态
-- 了解各种游戏类型的常见谜题和策略
+Wawa 支持两种个性预设，通过设置面板实时切换：
+
+| 个性 · Personality | 风格 · Style |
+|-------------------|-------------|
+| **Wawa 热情** (默认) | 熟悉 1980-90 年代中文 DOS 游戏的热情 AI 助手，简体中文回复，2-4 段，适当使用表情符号，对老游戏保持尊重和怀念 |
+| **Wawa 简洁** | 极简回答，1-3 句，无表情符号，直接给答案不废话，最多 50 字 |
+
+两种个性均能分析游戏截屏中的文字、UI 和游戏状态，了解各种游戏类型的常见谜题和策略。
 
 ---
 

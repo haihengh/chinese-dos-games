@@ -128,6 +128,7 @@ chmod +x start.sh
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | No | — | AI chat (Claude) |
 | `GAME_DOWNLOAD_BASE` | No | GitHub raw | Game mirror URL (use ghproxy for China) |
+| `OLLAMA_BASE_URL` | No | — | Local Ollama server URL (e.g. `http://ollama:11434/v1`); enables offline AI mode |
 | `SECRET_KEY` | No | auto-gen | Flask session secret |
 | `PORT` | No | 5000 | Server port |
 
