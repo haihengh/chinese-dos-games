@@ -1,0 +1,17 @@
+# ─── NVIDIA GPU acceleration override ───
+# Usage:
+#   docker compose -f docker-compose.local-ai.yml -f docker-compose.local-ai.gpu-nvidia.yml up -d
+#
+# Prerequisites:
+#   - NVIDIA GPU + drivers installed
+#   - nvidia-container-toolkit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

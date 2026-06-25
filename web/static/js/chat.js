@@ -40,7 +40,7 @@
             base_url: '',
             personality: 'wawa',
             tts_voice: TTS_DEFAULT_VOICE,
-            tts_rate: '+15%',
+            tts_rate: '+25%',
             input_lang: 'zh-CN',
         };
     }
@@ -51,12 +51,12 @@
 
     const state = {
         isOpen: false,
-        isPinned: localStorage.getItem('chat_pinned') === 'true',
+        isPinned: localStorage.getItem('chat_pinned') !== 'false',  // true unless user explicitly unpinned
         defaultOpen: localStorage.getItem('chat_default_open') !== 'false',  // true unless user explicitly closed
         isWaiting: false,
         isRecording: false,
         isSettingsOpen: false,
-        ttsEnabled: localStorage.getItem('chat_tts_enabled') === 'true',
+        ttsEnabled: localStorage.getItem('chat_tts_enabled') !== 'false',  // true unless user explicitly disabled
         autoScreenshot: localStorage.getItem('chat_auto_screenshot') === 'true',
         messages: [],        // { role, content, timestamp }
         recognition: null,
@@ -239,10 +239,11 @@
                     <div class="chat-settings-row">
                         <label class="chat-settings-label">语速</label>
                         <select class="chat-settings-select" id="settings-tts-rate">
-                            <option value="-20%" ${state.settings.tts_rate === '-20%' ? 'selected' : ''}>慢速 -20%</option>
-                            <option value="+0%" ${state.settings.tts_rate === '+0%' ? 'selected' : ''}>标准 +0%</option>
-                            <option value="+15%" ${state.settings.tts_rate === '+15%' ? 'selected' : ''}>较快 +15%</option>
-                            <option value="+30%" ${state.settings.tts_rate === '+30%' ? 'selected' : ''}>快速 +30%</option>
+                            <option value="-20%">慢速 -20%</option>
+                            <option value="+0%">标准 +0%</option>
+                            <option value="+15%">较快 +15%</option>
+                            <option value="+25%">快速 +25%</option>
+                            <option value="+35%">极速 +35%</option>
                         </select>
                     </div>
                     <div class="chat-settings-divider"></div>
@@ -251,11 +252,12 @@
                         <label class="chat-settings-label">识别语言</label>
                         <select class="chat-settings-select" id="settings-input-lang">
                             <option value="zh-CN">普通话 (Mandarin)</option>
-                            <option value="yue-Hant-HK">粵語 (Cantonese)</option>
-                            <option value="zh-HK">粵語 後備 (Cantonese fallback)</option>
-                            <option value="zh-TW">台灣國語 (Taiwan)</option>
+                            <option value="yue-Hant-HK">粵語 (Cantonese · yue-Hant-HK)</option>
+                            <option value="zh-HK">粵語 兼容 (Cantonese · zh-HK)</option>
+                            <option value="zh-TW">台灣國語 (Taiwan Mandarin)</option>
                             <option value="en-US">English</option>
                         </select>
+                        <div class="chat-settings-hint">粵語首选 yue-Hant-HK，如不支援将自动回退 zh-HK</div>
                     </div>
                 </div>
                 <div class="chat-settings-footer">
@@ -479,7 +481,7 @@
         const ttsVoice = document.getElementById('settings-tts-voice');
         const ttsRate = document.getElementById('settings-tts-rate');
         if (ttsVoice) ttsVoice.value = state.settings.tts_voice || TTS_DEFAULT_VOICE;
-        if (ttsRate) ttsRate.value = state.settings.tts_rate || '+15%';
+        if (ttsRate) ttsRate.value = state.settings.tts_rate || '+25%';
 
         // Voice input language
         const inputLang = document.getElementById('settings-input-lang');
@@ -526,6 +528,11 @@
         state.settings.tts_voice = document.getElementById('settings-tts-voice').value;
         state.settings.tts_rate = document.getElementById('settings-tts-rate').value;
         state.settings.input_lang = document.getElementById('settings-input-lang').value;
+
+        // Update active recognition language (was missing — language change was ignored)
+        if (state.recognition) {
+            state.recognition.lang = state.settings.input_lang;
+        }
 
         saveSettings();
         updateStatusIndicator();
@@ -1199,6 +1206,23 @@
             case 'network':
                 window.DOS.App.showToast('语音识别需要网络连接', 'error');
                 break;
+            case 'language-not-supported':
+                // Auto-fallback: yue-Hant-HK → zh-HK → zh-CN
+                const currentLang = state.recognition.lang;
+                if (currentLang === 'yue-Hant-HK') {
+                    state.recognition.lang = 'zh-HK';
+                    state.settings.input_lang = 'zh-HK';
+                    saveSettings();
+                    window.DOS.App.showToast('已切换为 zh-HK 粵語识别', 'info');
+                } else if (currentLang === 'zh-HK' || currentLang === 'zh-TW') {
+                    state.recognition.lang = 'zh-CN';
+                    state.settings.input_lang = 'zh-CN';
+                    saveSettings();
+                    window.DOS.App.showToast('已切换为普通话识别', 'info');
+                } else {
+                    window.DOS.App.showToast('当前浏览器不支持所选语音语言', 'error');
+                }
+                break;
             default:
                 window.DOS.App.showToast('语音识别失败: ' + error, 'error');
         }
@@ -1287,6 +1311,7 @@
     const TTS_ENGINE_KEY = 'chat_tts_engine';
     let _ttsEngine = localStorage.getItem(TTS_ENGINE_KEY) || 'edge';  // default to Edge neural
     let _activeAudio = null;  // Currently playing Edge TTS Audio element
+    let _ttsGen = 0;  // Incremented on each new speakText call — cancels stale loops
 
     // Pre-load browser voices — they load asynchronously
     let _voicesLoaded = false;
@@ -1323,6 +1348,10 @@
     async function speakText(text) {
         if (!state.ttsEnabled) return;
 
+        // Cancel any in-progress TTS playback (stale generation)
+        _ttsGen++;
+        const myGen = _ttsGen;
+
         // Stop any ongoing audio
         stopSpeaking();
 
@@ -1338,59 +1367,125 @@
         if (!cleanText) return;
 
         if (_ttsEngine === 'edge') {
-            await speakWithEdgeTTS(cleanText);
+            await speakWithEdgeTTS(cleanText, myGen);
         } else {
             speakWithBrowserTTS(cleanText);
         }
     }
 
-    async function speakWithEdgeTTS(text) {
+    /**
+     * Speak text via Edge TTS with streaming playback.
+     *
+     * Strategy: split text into sentences, pre-fetch the next sentence's audio
+     * while the current sentence is playing. This gives near-instant first-word
+     * latency and seamless playback without gaps.
+     */
+    async function speakWithEdgeTTS(text, gen) {
         const btn = document.getElementById('btn-chat-tts');
         if (btn) {
             btn.classList.add('tts-speaking');
             btn.title = 'Edge TTS 播报中...';
         }
 
-        try {
-            // Get configured voice from settings
-            const voiceKey = (state.settings.tts_voice) || TTS_DEFAULT_VOICE;
-            const voiceConfig = TTS_VOICES[voiceKey] || TTS_VOICES[TTS_DEFAULT_VOICE];
-            const rate = state.settings.tts_rate || '+15%';
+        // Split into speakable chunks (sentences or clause boundaries)
+        const chunks = splitIntoTTSChunks(text);
+        if (chunks.length === 0) return;
 
+        const voiceKey = (state.settings.tts_voice) || TTS_DEFAULT_VOICE;
+        const voiceConfig = TTS_VOICES[voiceKey] || TTS_VOICES[TTS_DEFAULT_VOICE];
+        const rate = state.settings.tts_rate || '+25%';
+
+        try {
+            // Pre-fetch first chunk
+            let nextPromise = fetchTTSBlob(chunks[0], voiceConfig.voice, rate);
+
+            for (let i = 0; i < chunks.length; i++) {
+                // If a newer speakText call started, abort this stale loop
+                if (gen !== _ttsGen) return;
+
+                // Start fetching next chunk while current one plays
+                const nextNextPromise = (i + 1 < chunks.length)
+                    ? fetchTTSBlob(chunks[i + 1], voiceConfig.voice, rate)
+                    : null;
+
+                const blob = await nextPromise;
+                nextPromise = nextNextPromise;
+
+                if (!blob) continue;
+
+                // Stop if TTS was turned off or a newer call superseded us
+                if (!state.ttsEnabled || gen !== _ttsGen) {
+                    updateTTSSpeakingState(false);
+                    return;
+                }
+
+                await playBlob(blob);
+            }
+        } catch (e) {
+            console.warn('[chat.js] Edge TTS failed, falling back to browser TTS:', e.message);
+            if (btn) btn.classList.remove('tts-speaking');
+            if (gen === _ttsGen) speakWithBrowserTTS(text);
+        }
+    }
+
+    /** Split text into TTS-friendly chunks at sentence/clause boundaries. */
+    function splitIntoTTSChunks(text) {
+        // Split on Chinese/English sentence boundaries, keeping delimiters
+        const raw = text.split(/(?<=[。！？\.!\?\n])/);
+        const chunks = [];
+        let buf = '';
+        for (const part of raw) {
+            buf += part;
+            // Flush when chunk is long enough or ends with a delimiter
+            if (buf.length >= 30 || /[。！？\.!\?\n]$/.test(buf)) {
+                const trimmed = buf.trim();
+                if (trimmed) chunks.push(trimmed);
+                buf = '';
+            }
+        }
+        const remaining = buf.trim();
+        if (remaining) chunks.push(remaining);
+        return chunks.length ? chunks : [text];
+    }
+
+    /** Fetch TTS audio for a single chunk, returns a Blob (or null on error). */
+    async function fetchTTSBlob(chunkText, voice, rate) {
+        try {
             const resp = await fetch('/api/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: text, voice: voiceConfig.voice, rate: rate }),
+                body: JSON.stringify({ text: chunkText, voice: voice, rate: rate }),
             });
-
-            if (!resp.ok) {
-                throw new Error('TTS request failed: ' + resp.status);
-            }
-
-            const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
-            _activeAudio = new Audio(url);
-            _activeAudio.volume = 1.0;
-
-            _activeAudio.addEventListener('ended', () => {
-                URL.revokeObjectURL(url);
-                _activeAudio = null;
-                updateTTSSpeakingState(false);
-            });
-
-            _activeAudio.addEventListener('error', () => {
-                URL.revokeObjectURL(url);
-                _activeAudio = null;
-                updateTTSSpeakingState(false);
-            });
-
-            await _activeAudio.play();
+            if (!resp.ok) throw new Error('TTS status ' + resp.status);
+            return await resp.blob();
         } catch (e) {
-            console.warn('[chat.js] Edge TTS failed, falling back to browser TTS:', e.message);
-            // Fall back to browser TTS
-            if (btn) btn.classList.remove('tts-speaking');
-            speakWithBrowserTTS(text);
+            console.warn('[chat.js] TTS chunk fetch failed:', e.message);
+            return null;
         }
+    }
+
+    /** Play a Blob as audio, returns a promise that resolves when playback ends. */
+    function playBlob(blob) {
+        return new Promise((resolve) => {
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            audio.volume = 1.0;
+            _activeAudio = audio;
+
+            audio.addEventListener('ended', () => {
+                URL.revokeObjectURL(url);
+                if (_activeAudio === audio) _activeAudio = null;
+                resolve();
+            });
+
+            audio.addEventListener('error', () => {
+                URL.revokeObjectURL(url);
+                if (_activeAudio === audio) _activeAudio = null;
+                resolve();
+            });
+
+            audio.play().catch(() => resolve());
+        });
     }
 
     function speakWithBrowserTTS(text) {

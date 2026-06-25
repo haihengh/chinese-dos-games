@@ -2,12 +2,11 @@
 #   docker compose up -d
 #   → Open https://localhost:5000
 
-version: "3.8"
-
 services:
+  # Uses pre-built image from Docker Hub. To build locally instead:
+  #   docker compose build
   dos-games:
-    build: .
-    image: chinese-dos-games:latest
+    image: haihengh/chinese-dos-games:latest
     container_name: dos-games
     restart: unless-stopped
     ports:
@@ -28,9 +27,9 @@ services:
       # China-friendly: https://ghproxy.net/https://raw.githubusercontent.com/...
       - GAME_DOWNLOAD_BASE=${GAME_DOWNLOAD_BASE:-}
 
-      # ── Auth ──
-      - SECRET_KEY=${SECRET_KEY:-}
-      - JWT_SECRET=${JWT_SECRET:-}
+      # ── Auth (omit to auto-generate random keys on first run) ──
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET=${JWT_SECRET}
 
     logging:
       driver: "json-file"

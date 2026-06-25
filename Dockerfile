@@ -31,12 +31,18 @@ COPY web/ /app/web/
 COPY games.json /app/games.json
 COPY img/ /app/img/
 
+# Volume-safe schema.sql: /app/web/data/ may be hidden by a Docker named volume,
+# so keep a copy next to database.py where no volume mount can reach it
+RUN cp /app/web/data/schema.sql /app/web/schema.sql
+
 # Generate persistent self-signed SSL certificate (10-year validity)
 RUN PYTHONPATH=/install python /app/web/generate_cert.py --output /app/web/certs
 
 # Game files fetched on demand at runtime — create empty dirs
-RUN mkdir -p /app/web/jsdos_cache /app/web/uploads_temp /app/bin /app/img \
-    && chmod 777 /app/bin /app/img /app/web/jsdos_cache /app/web/uploads_temp
+# /app/web/data must be writable for SQLite DB creation
+# schema.sql is copied alongside database.py so volumes can't hide it
+RUN mkdir -p /app/web/jsdos_cache /app/web/uploads_temp /app/web/data /app/bin /app/img \
+    && chmod 777 /app/bin /app/img /app/web/jsdos_cache /app/web/uploads_temp /app/web/data
 
 # Security: drop root — but keep cert readable
 RUN useradd -m -s /bin/bash dosgames \

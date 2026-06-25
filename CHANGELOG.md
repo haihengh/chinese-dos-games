@@ -2,7 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] — 2025-06-25
+## [Unreleased] — 2025-06-25 (evening)
+
+### Fixed
+- **Ollama system prompt ignored**: Ollama's `/api/chat` has no top-level `system` field — the game-aware system prompt (personality + game context) was silently dropped. Now passed as `role: "system"` message. AI now correctly knows which game the user is playing.
+- **Voice recognition language never updated**: Changing the input language in settings saved to `state.settings` but never updated `state.recognition.lang` — the speech engine was permanently stuck on `zh-CN`. Fixed to sync on save.
+- **Voice recognition language fallback**: Added auto-fallback chain `yue-Hant-HK → zh-HK → zh-CN` when browser doesn't support the selected language code.
+- **Docker login broken**: Three root causes:
+  - Named volume at `/app/web/data` could hide `schema.sql` on first run (Docker Desktop Windows issue). Fixed with volume-safe copy at `/app/web/schema.sql` + embedded SQL fallback.
+  - `/app/web/data` missing from `chmod 777` — non-root `dosgames` user couldn't create `games.db`. Added to Dockerfile.
+  - `SECRET_KEY`/`JWT_SECRET` defaulted to empty string via `${VAR:-}` in compose files — `os.environ.get()` uses default only on absent keys, not empty ones. Changed to `or` pattern in config.py and removed `:-` suffix from compose files.
+- **Cloud save upload broken**: `saveToCloud()` read from app's `STORE_SAVES` IndexedDB (always empty) instead of js-dos's actual `sockdrive` IndexedDB. Added `readSockdriveSave()`/`writeSockdriveSave()` that properly pack/unpack js-dos's internal save storage.
+- **Base64 encoding crash on large saves**: `arrayBufferToBase64` used byte-by-byte loop (2M iterations for a 2MB save). Changed to 32KB chunked processing with `String.fromCharCode.apply`.
+- **Save data corruption**: `subarray().buffer` returns the full buffer, not the slice — replaced with `slice().buffer` in sockdrive write path.
+
+### Changed
+- **TTS streaming**: Server now streams Edge TTS chunks directly (no buffering). Frontend split-chunk pre-fetching: next sentence's audio is downloaded while current plays. Default speech rate increased from `+15%` to `+25%`. TTS race condition fixed with `_ttsGen` cancellation counter.
+- **Chat pin + TTS defaults**: `chat_pinned` and `chat_tts_enabled` now default to `true` (on) instead of `false`.
+
+### Added
+- **GPU acceleration compose files**: `docker-compose.local-ai.gpu-nvidia.yml` and `docker-compose.local-ai.gpu-amd.yml` — override files for GPU passthrough. Base compose stays CPU-only (works everywhere).
+- **Apple Silicon Mac compose**: `docker-compose.local-ai.mac.yml` — dedicated compose for Mac where Docker has no GPU passthrough. Ollama runs natively (Metal GPU), dos-games stays in Docker.
+- **Database resilience**: Three-tier schema loading (data/schema.sql → volume-safe copy → embedded SQL fallback). Proper error handling in `init_db()` with logging.
+
+### Removed
+- `version: "3.8"` from compose files (obsolete in Docker Compose v2+).
+- `build: .` from compose files (images now pulled pre-built from Docker Hub; rebuild with `docker compose build` when needed).
+- Duplicate SSL certificate warning in README.
+
+## [Unreleased] — 2025-06-25 (morning)
 
 ### Fixed
 - **Cantonese voice input**: Changed language code from `zh-HK` to `yue-Hant-HK` — the explicit BCP 47 tag for Cantonese (Yue Chinese, Traditional Han, Hong Kong). `zh-HK` is ambiguous and many browsers treat it as Mandarin with HK accent. Auto-migrates existing users. Kept `zh-HK` as fallback option.
@@ -22,8 +50,6 @@ All notable changes to this project will be documented in this file.
 - `web/static/js/game.js`: `saveGame()` dispatches to `saveToCloud()` when cloud mode active
 - `web/templates/game.html`: Added save mode `<select>`, cloud load button 📥, updated button labels
 - `web/static/css/main.css`: Added `.save-mode-select` styles
-
-### Docker Fixes (v0.4.1 — v0.4.5)
 
 ### Docker Fixes (v0.4.1 — v0.4.5)
 Critical fixes for the Docker deployment, rolled out across five patch releases.

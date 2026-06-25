@@ -17,12 +17,13 @@ class Config:
     UPLOAD_TEMP = os.path.join(BASE_DIR, 'uploads_temp')
 
     # Flask
-    SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+    # Use `or` so empty-string env vars (from docker-compose ${VAR:-}) fall through
+    SECRET_KEY = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
     JSON_AS_ASCII = False  # Critical for Chinese character handling
     MAX_CONTENT_LENGTH = 200 * 1024 * 1024  # 200MB max upload
 
     # JWT
-    JWT_SECRET = os.environ.get('JWT_SECRET', SECRET_KEY)
+    JWT_SECRET = os.environ.get('JWT_SECRET') or SECRET_KEY
     JWT_EXPIRY_HOURS = 72
 
     # js-dos CDN (v8)

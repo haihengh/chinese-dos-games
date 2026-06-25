@@ -116,7 +116,7 @@ def _resolve_config(api_key=None, base_url=None, model=None, provider=None):
         logger.info(f"Using local AI: {effective_url} model={effective_model}")
 
     if effective_provider == 'ollama':
-        effective_url = base_url or ollama_url or 'http://localhost:11434/v1'
+        effective_url = base_url or ollama_url or 'http://localhost:11434'
         effective_model = model or local_ai_model
         if not effective_key:
             effective_key = 'ollama'  # No auth needed
@@ -223,6 +223,11 @@ def _build_system_prompt(game_context, personality=None):
     """Build the system prompt, enriched with current game context."""
     prompt = get_system_prompt(personality)
 
+    if not game_context:
+        logger.info("No game_context provided — AI won't know which game is being played")
+    elif not isinstance(game_context, dict):
+        logger.info(f"game_context is not a dict (got {type(game_context).__name__}) — ignored")
+
     if game_context and isinstance(game_context, dict):
         name = game_context.get('name_zh') or game_context.get('name_en') or ''
         name_en = game_context.get('name_en', '')
@@ -302,6 +307,117 @@ def _call_anthropic(api_key, base_url, model, messages, screenshot_base64, syste
             'output_tokens': response.usage.output_tokens,
         },
     }
+
+
+# ── Ollama native API (always available, more reliable than /v1 compat layer) ──
+
+def _call_ollama(api_key, base_url, model, messages, screenshot_base64, system_prompt=None):
+    """Call Ollama's native /api/chat endpoint.
+
+    Ollama's native API differences from OpenAI:
+    - System prompt → message with role="system" (no top-level `system` field)
+    - Message content → plain string, NOT an array of content parts
+    - Images → separate `images` field on the message (raw base64, no data: prefix)
+    """
+    effective_system = system_prompt or SYSTEM_PROMPT
+
+    # Build messages in Ollama's native format
+    ollama_messages = []
+
+    for i, msg in enumerate(messages):
+        role = msg['role']
+        content = msg.get('content', '').strip()
+
+        if not content and role != 'user':
+            continue
+
+        is_last_user = (role == 'user' and i == len(messages) - 1)
+
+        if is_last_user and screenshot_base64:
+            # Ollama native format: images as separate field, content as plain string
+            ollama_messages.append({
+                'role': 'user',
+                'content': content or '请查看这张游戏截屏',
+                'images': [screenshot_base64],
+            })
+        else:
+            ollama_messages.append({'role': role, 'content': content})
+
+    if not ollama_messages:
+        return {'reply': None, 'error': '没有可发送的消息'}
+
+    if ollama_messages[0]['role'] != 'user':
+        ollama_messages.insert(0, {'role': 'user', 'content': '你好'})
+
+    # System prompt as first message (Ollama has no top-level `system` field)
+    if effective_system:
+        ollama_messages.insert(0, {'role': 'system', 'content': effective_system})
+
+    url = base_url.rstrip('/') + '/api/chat'
+
+    payload = {
+        'model': model,
+        'messages': ollama_messages,
+        'stream': False,
+        'options': {
+            'temperature': 0.7,
+            'num_predict': 4096,
+        },
+    }
+
+    headers = {
+        'Content-Type': 'application/json',
+    }
+
+    # Detect if game context is in the system prompt
+    has_game_ctx = '当前游戏' in (effective_system or '')
+    logger.info(
+        f"Calling Ollama native: url={url}, model={model}, "
+        f"messages={len(ollama_messages)}, screenshot={'yes' if screenshot_base64 else 'no'}, "
+        f"game_context={'yes' if has_game_ctx else 'NO'}"
+    )
+
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=180)
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Ollama connection failed: {e}")
+        return {'reply': None, 'error': f'无法连接到 {base_url}，请检查 Ollama 是否正在运行'}
+    except requests.exceptions.Timeout:
+        logger.error(f"Ollama timeout: {url}")
+        return {'reply': None, 'error': 'Ollama 响应超时，模型可能正在加载或请求过于复杂'}
+    except Exception as e:
+        logger.error(f"Ollama request failed: {e}")
+        return {'reply': None, 'error': f'请求失败: {str(e)[:200]}'}
+
+    if resp.status_code != 200:
+        error_text = resp.text[:500]
+        logger.error(f"Ollama API error {resp.status_code}: {error_text}")
+
+        if resp.status_code == 404:
+            model_name = payload.get('model', '?')
+            return {'reply': None, 'error': (
+                f'模型 "{model_name}" 未找到。请先拉取模型:\n'
+                f'  docker exec dos-games-ollama ollama pull {model_name}'
+            )}
+        elif resp.status_code >= 500:
+            return {'reply': None, 'error': f'Ollama 服务错误 ({resp.status_code}): {error_text[:200]}'}
+        else:
+            return {'reply': None, 'error': f'Ollama 错误 ({resp.status_code}): {error_text[:200]}'}
+
+    data = resp.json()
+    reply = data.get('message', {}).get('content', '')
+    eval_count = data.get('eval_count', 0)
+    prompt_eval_count = data.get('prompt_eval_count', 0)
+
+    logger.info(
+        f"Ollama response: {len(reply)} chars, "
+        f"prompt_tokens={prompt_eval_count}, completion_tokens={eval_count}"
+    )
+
+    return {'reply': reply, 'usage': {
+        'input_tokens': prompt_eval_count,
+        'output_tokens': eval_count,
+    }}
 
 
 # ── OpenAI-compatible path (HTTP) ──
@@ -413,7 +529,7 @@ def _call_openai(api_key, base_url, model, messages, screenshot_base64, system_p
 
 def chat_with_ai(messages, screenshot_base64=None,
                  api_key=None, base_url=None, model=None, provider=None,
-                 game_context=None, personality=None):
+                 game_context=None, personality=None, game_id=None):
     """Send conversation to AI and return the assistant's reply.
 
     Args:
@@ -444,8 +560,9 @@ def chat_with_ai(messages, screenshot_base64=None,
     system_prompt = _build_system_prompt(game_context, personality)
 
     try:
-        if prov == 'openai' or prov == 'ollama':
-            # Ollama is OpenAI-compatible — same HTTP API path
+        if prov == 'ollama':
+            return _call_ollama(key, url, mdl, messages, screenshot_base64, system_prompt)
+        elif prov == 'openai':
             return _call_openai(key, url, mdl, messages, screenshot_base64, system_prompt)
         else:
             return _call_anthropic(key, url, mdl, messages, screenshot_base64, system_prompt)

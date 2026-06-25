@@ -1,0 +1,57 @@
+# ─── Chinese DOS Games + Local AI for Apple Silicon Mac ───
+#
+# Mac 用户专用 · Mac-only setup
+# Ollama runs NATIVELY (Metal GPU acceleration) while dos-games runs in Docker.
+# Docker on macOS has NO GPU passthrough — native Ollama is the only way to
+# get GPU acceleration on Apple Silicon.
+#
+# Prerequisites (one-time):
+#   brew install ollama
+#   ollama serve                    # or launch Ollama.app from /Applications
+#   ollama pull qwen3-vl:4b        # ~4GB, one-time download
+#
+# Then:
+#   docker compose -f docker-compose.local-ai.mac.yml up -d
+#   open https://localhost:5000
+
+services:
+  dos-games:
+    build: .
+    image: haihengh/chinese-dos-games:latest
+    container_name: dos-games
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    volumes:
+      - dos-games-bin:/app/bin
+      - dos-games-img:/app/img
+      - dos-games-cache:/app/web/jsdos_cache
+      - dos-games-data:/app/web/data
+    environment:
+      # ── Local AI: points to Ollama running natively on macOS ──
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - LOCAL_AI_MODEL=${LOCAL_AI_MODEL:-qwen3-vl:4b}
+      - LOCAL_AI_DEFAULT=${LOCAL_AI_DEFAULT:-true}
+
+      # ── Cloud AI fallback (optional) ──
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+
+      # ── Game download mirror ──
+      - GAME_DOWNLOAD_BASE=${GAME_DOWNLOAD_BASE:-}
+
+      # ── Auth (omit to auto-generate random keys on first run) ──
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  dos-games-bin:
+  dos-games-img:
+  dos-games-cache:
+  dos-games-data:

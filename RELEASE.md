@@ -127,9 +127,13 @@ chmod +x start.sh
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | No | — | AI chat (Claude) |
-| `GAME_DOWNLOAD_BASE` | No | `https://dos-bin.zczc.cz/` | Game mirror URL (override for ghproxy/China or self-hosted CDN) |
-| `OLLAMA_BASE_URL` | No | — | Local Ollama server URL (e.g. `http://ollama:11434/v1`); enables offline AI mode |
-| `SECRET_KEY` | No | auto-gen | Flask session secret |
+| `ANTHROPIC_MODEL` | No | `claude-sonnet-4-20250514` | Claude model for cloud AI |
+| `GAME_DOWNLOAD_BASE` | No | `https://dos-bin.zczc.cz/` | Game mirror URL |
+| `OLLAMA_BASE_URL` | No | — | Local Ollama server URL (e.g. `http://ollama:11434`); enables offline AI |
+| `LOCAL_AI_MODEL` | No | `qwen3-vl:4b` | Model for local AI (used with Ollama) |
+| `LOCAL_AI_DEFAULT` | No | — | Set to `true` to default to local AI mode |
+| `SECRET_KEY` | No | auto-gen | Flask session secret (random hex if unset) |
+| `JWT_SECRET` | No | auto-gen | JWT signing key (falls back to SECRET_KEY) |
 | `PORT` | No | 5000 | Server port |
 
 ## Post-Release Checklist

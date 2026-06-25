@@ -55,11 +55,22 @@ docker run -d -p 5000:5000 -v dos-games-bin:/app/bin haihengh/chinese-dos-games:
 
 **本地 AI**（无需 API 密钥，完全离线）:
 ```bash
+# CPU 模式（默认，Windows/Linux 通用）
 docker compose -f docker-compose.local-ai.yml up -d
-# 首次启动自动下载 Qwen3-VL 4B (~4GB)，之后完全本地运行
-```
 
-> 🔐 首次访问会提示证书警告，点击"高级 → 继续前往 localhost"即可。证书为持久化自签名证书（10 年有效期），之后不会再出现。
+# NVIDIA GPU 加速（需 nvidia-container-toolkit）
+docker compose -f docker-compose.local-ai.yml -f docker-compose.local-ai.gpu-nvidia.yml up -d
+
+# AMD / Intel Arc GPU 加速（Linux，ROCm / OpenCL）
+docker compose -f docker-compose.local-ai.yml -f docker-compose.local-ai.gpu-amd.yml up -d
+
+# 🍎 Apple Silicon Mac（Ollama 原生运行 + Docker 仅跑 Web）
+brew install ollama && ollama pull qwen3-vl:4b
+docker compose -f docker-compose.local-ai.mac.yml up -d
+```
+> 首次启动自动拉取预构建镜像 + 下载 Qwen3-VL 4B (~4GB)，之后完全本地运行
+> 🍎 Mac 用户注意：Docker 在 macOS 上不支持 GPU 直通，Ollama 必须原生运行以获得 Metal 加速
+
 > 🔐 首次访问会提示证书警告，点击"高级 → 继续前往 localhost"即可。证书为持久化自签名证书（10 年有效期），之后不会再出现。
 
 ### 一键脚本

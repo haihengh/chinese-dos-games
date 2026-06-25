@@ -37,9 +37,21 @@ docker run -d -p 5000:5000 -v dos-games-bin:/app/bin haihengh/chinese-dos-games:
 
 **本地 AI 版本**（无需 API 密钥，完全离线）:
 ```bash
+# CPU 模式（默认，Windows/Linux 通用 · All platforms）
 docker compose -f docker-compose.local-ai.yml up -d
-# 首次启动自动下载 Qwen3-VL 4B 模型 (~4GB)，之后完全本地运行
+
+# NVIDIA GPU 加速 · GPU acceleration（需 nvidia-container-toolkit）
+docker compose -f docker-compose.local-ai.yml -f docker-compose.local-ai.gpu-nvidia.yml up -d
+
+# AMD / Intel Arc GPU 加速 · GPU acceleration（Linux, ROCm / OpenCL）
+docker compose -f docker-compose.local-ai.yml -f docker-compose.local-ai.gpu-amd.yml up -d
+
+# 🍎 Apple Silicon Mac（Ollama 原生运行 · native Ollama, Metal GPU）
+brew install ollama && ollama pull qwen3-vl:4b
+docker compose -f docker-compose.local-ai.mac.yml up -d
 ```
+> 首次启动自动拉取预构建镜像 + 下载 Qwen3-VL 4B (~4GB)，之后完全本地运行
+> 🍎 Mac 用户注意：Docker 在 macOS 上不支持 GPU 直通，Ollama 必须原生运行以获得 Metal 加速
 
 访问 · Visit: **https://localhost:5000**
 
@@ -65,43 +77,108 @@ The local AI mode uses Ollama + Qwen3-VL 4B — runs entirely on your machine, n
 
 | 项目 · Item | 要求 · Requirement |
 |------------|-------------------|
-| 内存 · RAM | 8GB 最低，16GB+ 推荐 |
+| 内存 · RAM | 8GB 最低，16GB+ 推荐 · 8GB min, 16GB+ recommended |
 | 磁盘 · Disk | ~4GB（模型下载，一次性）· ~4GB for model (one-time download) |
-| GPU（可选） | NVIDIA GPU 可大幅加速 · Optional for faster inference |
+| GPU | 可选 · Optional — CPU 模式约 2-3s/词元，GPU 大幅加速 |
 
 **启动 · Start:**
-```bash
-# 一键启动（自动下载模型）
-docker compose -f docker-compose.local-ai.yml up -d
 
-# 查看启动日志（等待模型下载完成）
+| 平台 · Platform | 命令 · Command |
+|----------------|---------------|
+| Windows / Linux (CPU) | `docker compose -f docker-compose.local-ai.yml up -d` |
+| Windows / Linux (NVIDIA) | `docker compose -f docker-compose.local-ai.yml -f docker-compose.local-ai.gpu-nvidia.yml up -d` |
+| Linux (AMD / Intel Arc) | `docker compose -f docker-compose.local-ai.yml -f docker-compose.local-ai.gpu-amd.yml up -d` |
+| 🍎 **Apple Silicon Mac** | 见下方「🍎 Apple Silicon 特别说明」· See dedicated section below |
+
+```bash
+# 本地编译（而非拉取预构建镜像 · instead of pulling pre-built image）:
+docker compose -f docker-compose.local-ai.yml build
+
+# 查看启动日志（等待模型下载完成 · wait for model download）
 docker logs dos-games-ollama-pull -f
 ```
 
-**首次启动流程 · First Start:**
+**首次启动流程（Windows/Linux）· First Start (Windows/Linux):**
 ```
-1. docker compose up → 启动 3 个容器 (ollama + puller + dos-games)
+1. docker compose up → 拉取 haihengh/chinese-dos-games 镜像 + 启动 3 个容器 (ollama + puller + dos-games)
 2. ollama-pull 等待 ollama 就绪 → 自动下载 qwen3-vl:4b (~4GB)
 3. dos-games 检测到 OLLAMA_BASE_URL → 自动切换为本地 AI 模式
 4. 浏览器打开 https://localhost:5000 → 聊天面板显示 🏠 本地 AI
 ```
 
-**验证 · Verify:**
+### 🍎 Apple Silicon (M1/M2/M3/M4) 特别说明 · Apple Silicon Notes
+
+**Docker Desktop on macOS 不支持 GPU 直通（GPU passthrough）。**
+Ollama 在 Docker 容器内只能用 CPU 推理，速度很慢。解决方案：让 Ollama **原生运行在 macOS 上**（获得 Metal GPU 加速），而 dos-games Web 服务仍在 Docker 中运行。
+
+**Docker Desktop on macOS does NOT support GPU passthrough.**
+Ollama inside Docker is CPU-only (slow). The fix: run Ollama **natively on macOS** (Metal GPU acceleration) while dos-games stays in Docker.
+
+**架构 · Architecture:**
+```
+┌─────────────────────────────────────────┐
+│ macOS                                   │
+│  🦙 Ollama (原生 · native)              │
+│     Metal GPU acceleration               │
+│     localhost:11434                      │
+│  🐳 Docker                              │
+│     dos-games → host.docker.internal:11434 │
+└─────────────────────────────────────────┘
+```
+
+**配置步骤 · Setup:**
+```bash
+# 1. 安装 Ollama（原生 · native）
+brew install ollama
+
+# 2. 启动 Ollama 服务（开机自启 · auto-start）
+ollama serve &                    # 或打开 Ollama.app
+
+# 3. 下载模型（一次性 · one-time, ~4GB）
+ollama pull qwen3-vl:4b
+
+# 4. 启动 dos-games（Docker）
+docker compose -f docker-compose.local-ai.mac.yml up -d
+
+# 5. 验证 · Verify
+curl http://localhost:11434/api/tags       # Ollama 模型列表
+curl -sk https://localhost:5000/api/ai/status   # AI 服务状态
+open https://localhost:5000               # 打开 · Open
+```
+
+**停止 · Stop:**
+```bash
+docker compose -f docker-compose.local-ai.mac.yml down
+# Ollama 如需停止 · To stop Ollama: pkill ollama
+```
+
+**切换模型 · Switch Model (Mac):**
+```bash
+ollama pull qwen3-vl:8b                     # 拉取新模型
+LOCAL_AI_MODEL=qwen3-vl:8b docker compose -f docker-compose.local-ai.mac.yml up -d
+```
+
+---
+
+**验证 · Verify (Windows/Linux):**
 ```bash
 # 检查模型是否下载完成
 docker exec dos-games-ollama ollama list
 
-# 查看 AI 服务状态
+# 查看 AI 服务状态 · AI service status
 curl -sk https://localhost:5000/api/ai/status
 ```
 
-**GPU 加速 · GPU Acceleration:**
-```bash
-# NVIDIA GPU: 取消 docker-compose.local-ai.yml 中 deploy 部分的注释
-# Uncomment the deploy section in docker-compose.local-ai.yml for NVIDIA GPU
-```
+**GPU 加速 · GPU Acceleration (Windows/Linux):**
 
-**切换模型 · Switch Model:**
+| GPU | 命令 · Command | 前提条件 · Prerequisite |
+|-----|---------------|----------------------|
+| NVIDIA | `-f docker-compose.local-ai.gpu-nvidia.yml` | [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) |
+| AMD | `-f docker-compose.local-ai.gpu-amd.yml` | [ROCm](https://rocm.docs.amd.com) drivers, Linux |
+| Intel Arc | `-f docker-compose.local-ai.gpu-amd.yml` | OpenCL / oneAPI drivers, Linux |
+| 🍎 Apple Silicon | `-f docker-compose.local-ai.mac.yml` | **Ollama 必须原生运行** · Ollama must run natively (see 🍎 section above) |
+
+**切换模型 · Switch Model (Windows/Linux):**
 ```bash
 # 拉取更强的模型
 docker exec dos-games-ollama ollama pull qwen3-vl:8b
@@ -111,7 +188,7 @@ export LOCAL_AI_MODEL=qwen3-vl:8b
 docker compose -f docker-compose.local-ai.yml up -d
 ```
 
-**停止 · Stop:**
+**停止 · Stop (Windows/Linux):**
 ```bash
 docker compose -f docker-compose.local-ai.yml down
 # 模型数据保留在 ollama-models 卷中，下次启动无需重新下载

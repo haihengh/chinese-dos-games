@@ -276,6 +276,164 @@
         } catch (e) { return false; }
     }
 
+    /**
+     * Find the js-dos sockdrive IndexedDB for this game and export all stored data.
+     * js-dos v8 stores MEMFS files in IndexedDB under names like "sockdrive <path>".
+     * We pack all entries into a single binary blob for upload.
+     */
+    async function readSockdriveSave(gameId) {
+        try {
+            if (typeof indexedDB.databases !== 'function') return null;
+            const dbs = await indexedDB.databases();
+            // Find the sockdrive DB for this game (matches BUNDLE_URL path)
+            const sockDb = dbs.find(d => d.name.startsWith('sockdrive ') && d.name.includes(gameId));
+            if (!sockDb) {
+                console.log('[game.js] No sockdrive DB found for ' + gameId);
+                return null;
+            }
+            console.log('[game.js] Reading sockdrive DB: ' + sockDb.name);
+            const db = await new Promise((resolve, reject) => {
+                const req = indexedDB.open(sockDb.name);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+            // Auto-discover the data store name (js-dos v8 may use FILE_DATA or custom names)
+            let storeName = null;
+            for (const name of db.objectStoreNames) {
+                // Skip metadata stores — we want the file content store
+                if (name.toLowerCase().includes('file') || name.toLowerCase().includes('data')) {
+                    storeName = name;
+                    break;
+                }
+            }
+            if (!storeName && db.objectStoreNames.length > 0) {
+                storeName = db.objectStoreNames[0];  // Fallback: first store
+            }
+            if (!storeName) {
+                db.close();
+                console.log('[game.js] No usable store found in sockdrive DB');
+                return null;
+            }
+            console.log('[game.js] Using sockdrive store: ' + storeName);
+            // Collect all entries from the store
+            const entries = [];
+            const tx = db.transaction(storeName, 'readonly');
+            const store = tx.objectStore(storeName);
+            const cursorReq = store.openCursor();
+            await new Promise((resolve, reject) => {
+                cursorReq.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        entries.push({ key: cursor.key, value: cursor.value });
+                        cursor.continue();
+                    } else {
+                        resolve();
+                    }
+                };
+                cursorReq.onerror = () => reject(cursorReq.error);
+            });
+            db.close();
+            if (entries.length === 0) {
+                console.log('[game.js] Sockdrive DB is empty');
+                return null;
+            }
+            // Pack entries as JSON + binary blobs: [4-byte header len][JSON header][blob1][blob2]...
+            const header = JSON.stringify(entries.map(e => ({ k: e.key, s: e.value ? e.value.byteLength : 0 })));
+            const headerBytes = new TextEncoder().encode(header);
+            const totalSize = 4 + headerBytes.length + entries.reduce((s, e) => s + (e.value ? e.value.byteLength : 0), 0);
+            const out = new Uint8Array(totalSize);
+            const view = new DataView(out.buffer);
+            view.setUint32(0, headerBytes.length, true);  // little-endian header length
+            out.set(headerBytes, 4);
+            let offset = 4 + headerBytes.length;
+            for (const e of entries) {
+                if (e.value) {
+                    out.set(new Uint8Array(e.value), offset);
+                    offset += e.value.byteLength;
+                }
+            }
+            console.log('[game.js] Packed ' + entries.length + ' sockdrive entries, ' + totalSize + ' bytes');
+            return out.buffer;
+        } catch (e) {
+            console.error('[game.js] readSockdriveSave error:', e);
+            return null;
+        }
+    }
+
+    /**
+     * Write a save bundle back to js-dos's sockdrive IndexedDB.
+     * js-dos will auto-restore from this on next page load.
+     */
+    async function writeSockdriveSave(gameId, buffer) {
+        try {
+            const bytes = new Uint8Array(buffer);
+            const view = new DataView(bytes.buffer);
+            const headerLen = view.getUint32(0, true);
+            const headerJson = new TextDecoder().decode(bytes.subarray(4, 4 + headerLen));
+            const entries = JSON.parse(headerJson);
+            console.log('[game.js] Writing ' + entries.length + ' entries to sockdrive for ' + gameId);
+
+            // Find existing sockdrive DB (must already exist — js-dos creates it on first play)
+            let dbName = null;
+            if (typeof indexedDB.databases === 'function') {
+                const dbs = await indexedDB.databases();
+                const existing = dbs.find(d => d.name.startsWith('sockdrive ') && d.name.includes(gameId));
+                if (!existing) {
+                    console.warn('[game.js] No existing sockdrive DB — play the game first to create one');
+                    return;
+                }
+                dbName = existing.name;
+            } else {
+                console.warn('[game.js] Cannot enumerate IndexedDB databases');
+                return;
+            }
+
+            const db = await new Promise((resolve, reject) => {
+                const req = indexedDB.open(dbName);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+                req.onupgradeneeded = () => {
+                    // js-dos v8 uses FILE_DATA as the content store
+                    if (!req.result.objectStoreNames.contains('FILE_DATA')) {
+                        req.result.createObjectStore('FILE_DATA');
+                    }
+                };
+            });
+
+            // Find the content store (match what readSockdriveSave expects)
+            let storeName = null;
+            for (const name of db.objectStoreNames) {
+                if (name.toLowerCase().includes('file') || name.toLowerCase().includes('data')) {
+                    storeName = name;
+                    break;
+                }
+            }
+            if (!storeName) storeName = 'FILE_DATA';
+
+            // Write all entries
+            let dataOffset = 4 + headerLen;
+            const tx = db.transaction(storeName, 'readwrite');
+            const store = tx.objectStore(storeName);
+            for (const entry of entries) {
+                if (entry.s > 0) {
+                    // slice() creates a new buffer with just this entry's data
+                    store.put(bytes.slice(dataOffset, dataOffset + entry.s).buffer, entry.k);
+                    dataOffset += entry.s;
+                } else {
+                    store.put(new ArrayBuffer(0), entry.k);
+                }
+            }
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+            db.close();
+            console.log('[game.js] Wrote ' + entries.length + ' entries to sockdrive');
+        } catch (e) {
+            console.error('[game.js] writeSockdriveSave error:', e);
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  File System Access API
     // ═══════════════════════════════════════════════════════════════
@@ -819,11 +977,11 @@
             if (dosCI && typeof dosCI.persist === 'function') {
                 await dosCI.persist();
             }
-            // Read the save data from IndexedDB and upload
-            const saveBytes = await getSaveState(GAME_ID);
+            // Read save from js-dos's actual IndexedDB (sockdrive), not our app store
+            const saveBytes = await readSockdriveSave(GAME_ID);
             if (!saveBytes || saveBytes.byteLength === 0) {
                 ss.textContent = '无存档数据';
-                window.DOS.App.showToast('暂无存档数据可上传', 'warning');
+                window.DOS.App.showToast('暂无存档数据可上传（请先在游戏中保存进度）', 'warning');
                 return;
             }
             const base64 = arrayBufferToBase64(saveBytes);
@@ -868,10 +1026,10 @@
             }
             const saveBytes = await resp.arrayBuffer();
             if (saveBytes && saveBytes.byteLength > 0) {
-                // Write to IndexedDB so js-dos picks it up on next restart
-                await putSaveState(GAME_ID, saveBytes);
+                // Write to js-dos's sockdrive IndexedDB (not our app store) so js-dos auto-restores it
+                await writeSockdriveSave(GAME_ID, saveBytes);
                 ss.textContent = '已下载 ☁️';
-                window.DOS.App.showToast('云端存档已下载，请重启游戏加载', 'success');
+                window.DOS.App.showToast('云端存档已下载，刷新页面后自动加载', 'success');
                 markGameSaved((saveBytes.byteLength / 1024).toFixed(0));
             } else {
                 ss.textContent = '云端无存档';
@@ -926,12 +1084,13 @@
     }
 
     function arrayBufferToBase64(buffer) {
-        let binary = '';
         const bytes = new Uint8Array(buffer);
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
+        const CHUNK = 0x8000;  // 32KB — avoids stack overflow on large saves
+        const parts = [];
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+            parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)));
         }
-        return btoa(binary);
+        return btoa(parts.join(''));
     }
 
     async function deleteSave() {

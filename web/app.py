@@ -6,7 +6,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import (
-    Flask, render_template, request, jsonify, send_file, g, redirect, url_for
+    Flask, render_template, request, jsonify, send_file, g, redirect, url_for,
+    Response, stream_with_context
 )
 from database import init_db, get_db
 from config import Config
@@ -460,6 +461,10 @@ def create_app():
         messages = data.get('messages', [])
         screenshot = data.get('screenshot', None)
         game_context = data.get('game_context', None)
+        if game_context:
+            app.logger.info(f"AI chat: game_context name={game_context.get('name_zh', '?')}")
+        else:
+            app.logger.info("AI chat: no game_context in request")
 
         # Per-request AI config overrides (optional)
         api_key = data.get('api_key', '').strip() or None
@@ -507,9 +512,8 @@ def create_app():
         """Generate speech audio using Edge TTS (free neural voices).
 
         Accepts: { text: str, voice?: str, rate?: str }
-        Returns: audio/mpeg binary (MP3)
+        Returns: audio/mpeg stream (chunked — playback begins before full audio is ready)
         """
-        import io
         import edge_tts
 
         data = request.get_json()
@@ -523,26 +527,25 @@ def create_app():
             return jsonify({'error': 'Text too long (max 5000 chars)'}), 400
 
         voice = data.get('voice', 'zh-CN-XiaoxiaoNeural')
-        rate = data.get('rate', '+10%')
+        rate = data.get('rate', '+25%')
 
-        try:
-            communicate = edge_tts.Communicate(text, voice, rate=rate)
-            mp3_data = io.BytesIO()
-            # edge-tts streams audio chunks; collect them all
-            for chunk in communicate.stream_sync():
-                if chunk['type'] == 'audio':
-                    mp3_data.write(chunk['data'])
-            mp3_data.seek(0)
+        def generate():
+            try:
+                communicate = edge_tts.Communicate(text, voice, rate=rate)
+                for chunk in communicate.stream_sync():
+                    if chunk['type'] == 'audio':
+                        yield chunk['data']
+            except Exception as e:
+                app.logger.error(f"TTS streaming error: {e}")
 
-            return send_file(
-                mp3_data,
-                mimetype='audio/mpeg',
-                as_attachment=False,
-                download_name='speech.mp3',
-            )
-        except Exception as e:
-            app.logger.error(f"TTS error: {e}")
-            return jsonify({'error': 'TTS generation failed'}), 500
+        return Response(
+            stream_with_context(generate()),
+            mimetype='audio/mpeg',
+            headers={
+                'X-Content-Type-Options': 'nosniff',
+                'Cache-Control': 'no-cache',
+            }
+        )
 
     # ─── API: Admin ───
 

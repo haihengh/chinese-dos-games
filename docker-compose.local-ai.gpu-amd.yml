@@ -1,0 +1,17 @@
+# ─── AMD / Intel Arc GPU acceleration override ───
+# Usage:
+#   docker compose -f docker-compose.local-ai.yml -f docker-compose.local-ai.gpu-amd.yml up -d
+#
+# Prerequisites (Linux only):
+#   - AMD: ROCm drivers (https://rocm.docs.amd.com)
+#   - Intel Arc: OpenCL / oneAPI drivers
+#   - Add your user to the video + render groups: sudo usermod -aG video,render $USER
+
+services:
+  ollama:
+    devices:
+      - /dev/kfd:/dev/kfd        # AMD ROCm compute
+      - /dev/dri:/dev/dri        # GPU render nodes (AMD + Intel)
+    group_add:
+      - "44"    # video group
+      - "107"   # render group
