@@ -481,7 +481,7 @@ img {
 
 /* ─── Game Player Page ─── */
 .game-page {
-    max-width: 1400px;
+    max-width: 1400px;  /* baseline for 1080p; JS scales this on larger displays */
     margin: 0 auto;
     padding: 20px;
     display: grid;

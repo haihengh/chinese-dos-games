@@ -87,22 +87,37 @@ function renderProfile(data) {
         </div>
     `;
 
+    // ── Local Saves (browser IndexedDB, detected via localStorage marker) ──
+    let localSaves = [];
+    try {
+        const index = JSON.parse(localStorage.getItem('saved_games_index') || '{}');
+        localSaves = Object.entries(index).map(([id, info]) => ({
+            game_identifier: id,
+            name: info.name || id,
+            filesize: (info.save_kb || '?') + ' KB',
+            updated_at: info.updated_at || null,
+            source: 'local',
+        }));
+    } catch (e) { /* ignore */ }
+
     // ── Stats ──
     const stats = data.stats || {};
-    document.getElementById('stat-saves').textContent = stats.save_count || 0;
+    const serverSaves = data.saves || [];
+    const totalSaves = serverSaves.length + localSaves.length;
+    document.getElementById('stat-saves').textContent = totalSaves || stats.save_count || 0;
     document.getElementById('stat-uploads').textContent = stats.upload_count || 0;
     document.getElementById('stat-size').textContent = formatSize(stats.total_save_size || 0);
     document.getElementById('profile-stats').style.display = '';
 
-    // ── Saved Games ──
-    const saves = data.saves || [];
-    if (saves.length > 0) {
+    // ── Saved Games (combined: server + local) ──
+    const allSaves = [...serverSaves, ...localSaves];
+    if (allSaves.length > 0) {
         document.getElementById('profile-saves').style.display = '';
-        document.getElementById('saves-list').innerHTML = saves.map(s => `
+        document.getElementById('saves-list').innerHTML = allSaves.map(s => `
             <a href="/games/${encodeURIComponent(s.game_identifier)}" class="profile-item">
-                <span class="profile-item-icon">🎮</span>
+                <span class="profile-item-icon">${s.source === 'local' ? '💻' : '🎮'}</span>
                 <span class="profile-item-name">${escapeHtml(s.name)}</span>
-                <span class="profile-item-meta">${formatSize(s.filesize)} · ${formatDate(s.updated_at)}</span>
+                <span class="profile-item-meta">${escapeHtml(s.filesize)}${s.updated_at ? ' · ' + formatDate(s.updated_at) : ''}</span>
                 <span class="profile-item-arrow">→</span>
             </a>
         `).join('');

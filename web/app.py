@@ -417,6 +417,12 @@ def create_app():
 
     # ─── API: AI Chat ───
 
+    @app.route('/api/ai/personalities')
+    def ai_personalities():
+        """Return list of available AI personality presets."""
+        from services.ai_service import get_personality_presets
+        return jsonify(get_personality_presets())
+
     @app.route('/api/ai/status')
     def ai_status():
         """Return whether AI chat is available (server, user key, or local AI)."""
@@ -460,6 +466,7 @@ def create_app():
         base_url = data.get('base_url', '').strip() or None
         model = data.get('model', '').strip() or None
         provider = data.get('provider', '').strip() or None
+        personality = data.get('personality', '').strip() or None
 
         # Validate provider
         if provider and provider not in ('anthropic', 'openai', 'ollama'):
@@ -481,6 +488,7 @@ def create_app():
                 api_key=api_key, base_url=base_url,
                 model=model, provider=provider,
                 game_context=game_context,
+                personality=personality,
             )
             if result.get('error'):
                 app.logger.warning(f"AI chat service error: {result['error']}")

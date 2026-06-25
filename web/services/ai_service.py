@@ -11,13 +11,21 @@ their own keys via the chat settings panel (sent with each request).
 import base64
 import json
 import logging
+import os
 import time
 import requests
 from config import Config
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are an expert retro game companion for Chinese DOS games from the 1980s-1990s. Your name is Wawa, a friendly and enthusiastic AI assistant.
+# ═══════════════════════════════════════════════════════════════
+#  Personality Presets
+# ═══════════════════════════════════════════════════════════════
+
+PERSONALITY_PRESETS = {
+    'wawa': {
+        'name': 'Wawa 热情',
+        'prompt': """You are an expert retro game companion for Chinese DOS games from the 1980s-1990s. Your name is Wawa, a friendly and enthusiastic AI assistant.
 
 ## 你的角色
 - 你正在帮助一位玩家游玩浏览器中的中文 DOS 游戏模拟器。
@@ -46,7 +54,42 @@ SYSTEM_PROMPT = """You are an expert retro game companion for Chinese DOS games 
 - 偶尔使用表情符号增加趣味性（但不要过度）。
 - 对老游戏保持尊重和怀念的态度。
 - 当玩家遇到困难时给予鼓励。
-"""
+""",
+    },
+    'wawa-concise': {
+        'name': 'Wawa 简洁',
+        'prompt': """You are Wawa, a retro game assistant for Chinese DOS games. Your only job: give the player exactly what they need — nothing more.
+
+## Rules (follow strictly)
+- Answer in 1-3 short sentences. Never write paragraphs.
+- No greetings, no farewells, no small talk.
+- No emoji, no fluff, no "hope this helps" sign-offs.
+- If you see a screenshot, state what you see in ONE line, then answer the question.
+- If the player doesn't ask a question, just describe the screen in ONE line.
+- Default to Chinese. Use English only if the player writes in English.
+- Give direct answers. Don't hint unless the player asks for hints.
+- If you don't know, say "不清楚" — don't explain why.
+- Max 50 words per reply.
+""",
+    },
+}
+
+DEFAULT_PERSONALITY = 'wawa'
+
+
+def get_personality_presets():
+    """Return list of available personality presets for the UI."""
+    return {k: {'name': v['name']} for k, v in PERSONALITY_PRESETS.items()}
+
+
+def get_system_prompt(personality=None):
+    """Get the system prompt for a given personality preset."""
+    key = personality if personality in PERSONALITY_PRESETS else DEFAULT_PERSONALITY
+    return PERSONALITY_PRESETS[key]['prompt']
+
+
+# Legacy reference — use get_system_prompt() instead
+SYSTEM_PROMPT = PERSONALITY_PRESETS[DEFAULT_PERSONALITY]['prompt']
 
 
 def _resolve_config(api_key=None, base_url=None, model=None, provider=None):
@@ -176,9 +219,9 @@ def _build_openai_messages(messages, screenshot_base64, system_prompt=None):
     return api_messages, None
 
 
-def _build_system_prompt(game_context):
+def _build_system_prompt(game_context, personality=None):
     """Build the system prompt, enriched with current game context."""
-    prompt = SYSTEM_PROMPT
+    prompt = get_system_prompt(personality)
 
     if game_context and isinstance(game_context, dict):
         name = game_context.get('name_zh') or game_context.get('name_en') or ''
@@ -370,7 +413,7 @@ def _call_openai(api_key, base_url, model, messages, screenshot_base64, system_p
 
 def chat_with_ai(messages, screenshot_base64=None,
                  api_key=None, base_url=None, model=None, provider=None,
-                 game_context=None):
+                 game_context=None, personality=None):
     """Send conversation to AI and return the assistant's reply.
 
     Args:
@@ -381,6 +424,7 @@ def chat_with_ai(messages, screenshot_base64=None,
         model: per-request model override (or None for server default)
         provider: 'anthropic' (default) or 'openai'
         game_context: dict with game metadata (name_zh, name_en, type, year, etc.)
+        personality: key into PERSONALITY_PRESETS (e.g. 'wawa', 'wawa-concise')
 
     Returns:
         dict with 'reply' (str) and optionally 'error' (str), 'usage' (dict)
@@ -397,7 +441,7 @@ def chat_with_ai(messages, screenshot_base64=None,
         logger.info("Chat request without screenshot")
 
     # Build game-aware system prompt
-    system_prompt = _build_system_prompt(game_context)
+    system_prompt = _build_system_prompt(game_context, personality)
 
     try:
         if prov == 'openai' or prov == 'ollama':
@@ -426,8 +470,10 @@ def chat_with_ai(messages, screenshot_base64=None,
 
 # Backward-compatible alias
 def chat_with_claude(messages, screenshot_base64=None,
-                     api_key=None, base_url=None, model=None, provider=None):
+                     api_key=None, base_url=None, model=None, provider=None,
+                     personality=None):
     """Legacy alias for chat_with_ai."""
     return chat_with_ai(messages, screenshot_base64,
                         api_key=api_key, base_url=base_url,
-                        model=model, provider=provider)
+                        model=model, provider=provider,
+                        personality=personality)

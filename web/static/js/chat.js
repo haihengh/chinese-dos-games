@@ -38,6 +38,7 @@
             api_key: '',
             model: '',
             base_url: '',
+            personality: 'wawa',
             tts_voice: TTS_DEFAULT_VOICE,
             tts_rate: '+15%',
         };
@@ -50,6 +51,7 @@
     const state = {
         isOpen: false,
         isPinned: localStorage.getItem('chat_pinned') === 'true',
+        defaultOpen: localStorage.getItem('chat_default_open') !== 'false',  // true unless user explicitly closed
         isWaiting: false,
         isRecording: false,
         isSettingsOpen: false,
@@ -66,6 +68,8 @@
         localAIModel: null,
         // User AI settings (from localStorage)
         settings: loadSettings(),
+        // Personality presets from server
+        personalities: null,
     };
 
     // ═══════════════════════════════════════════════════════════
@@ -120,6 +124,14 @@
             state.serverConfigured = false;
         }
 
+        // Fetch personality presets
+        try {
+            const resp = await fetch('/api/ai/personalities');
+            state.personalities = await resp.json();
+        } catch (e) {
+            state.personalities = null;
+        }
+
         // Load saved history
         loadHistory();
 
@@ -144,6 +156,11 @@
 
         // Update UI state
         updateStatusIndicator();
+
+        // Auto-open panel by default (user can close to dismiss)
+        if (state.defaultOpen) {
+            togglePanel(true);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -197,6 +214,13 @@
                         <input type="text" class="chat-settings-input" id="settings-baseurl"
                             placeholder="https://api.openai.com/v1 (DeepSeek: https://api.deepseek.com/v1)"
                             value="${escapeAttr(state.settings.base_url)}">
+                    </div>
+                    <div class="chat-settings-divider"></div>
+                    <div class="chat-settings-section-label">🎭 AI 个性</div>
+                    <div class="chat-settings-row">
+                        <label class="chat-settings-label">回复风格</label>
+                        <select class="chat-settings-select" id="settings-personality">
+                        </select>
                     </div>
                     <div class="chat-settings-divider"></div>
                     <div class="chat-settings-section-label">🔊 TTS 语音播报</div>
@@ -441,6 +465,23 @@
         if (ttsVoice) ttsVoice.value = state.settings.tts_voice || TTS_DEFAULT_VOICE;
         if (ttsRate) ttsRate.value = state.settings.tts_rate || '+15%';
 
+        // Populate personality dropdown
+        const personalitySelect = document.getElementById('settings-personality');
+        if (personalitySelect) {
+            personalitySelect.innerHTML = '';
+            const presets = state.personalities || {
+                'wawa': { name: 'Wawa 热情' },
+                'wawa-concise': { name: 'Wawa 简洁' },
+            };
+            Object.entries(presets).forEach(([key, info]) => {
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.textContent = info.name;
+                if (key === state.settings.personality) opt.selected = true;
+                personalitySelect.appendChild(opt);
+            });
+        }
+
         // Show/hide base URL based on provider
         const baseUrlRow = document.getElementById('settings-baseurl-row');
         if (baseUrlRow) {
@@ -461,6 +502,7 @@
         state.settings.api_key = document.getElementById('settings-key').value.trim();
         state.settings.model = document.getElementById('settings-model').value.trim();
         state.settings.base_url = document.getElementById('settings-baseurl').value.trim();
+        state.settings.personality = document.getElementById('settings-personality').value;
         state.settings.tts_voice = document.getElementById('settings-tts-voice').value;
         state.settings.tts_rate = document.getElementById('settings-tts-rate').value;
 
@@ -550,8 +592,15 @@
     //  Panel Visibility
     // ═══════════════════════════════════════════════════════════
 
-    function togglePanel() {
-        state.isOpen = !state.isOpen;
+    function togglePanel(forceOpen) {
+        const wasOpen = state.isOpen;
+        state.isOpen = (typeof forceOpen === 'boolean') ? forceOpen : !state.isOpen;
+
+        // When user manually toggles, remember their preference
+        if (typeof forceOpen !== 'boolean') {
+            state.defaultOpen = state.isOpen;
+            localStorage.setItem('chat_default_open', state.isOpen);
+        }
 
         if (state.isOpen) {
             els.panel.classList.remove('hidden');
@@ -830,7 +879,17 @@
             }
         } catch (err) {
             console.error('[chat.js] API call failed:', err);
-            addSystemMessage('网络连接失败，请检查网络后重试', true);
+            const msg = err.message || String(err);
+            // Network-level error (server down, DNS, CORS) → generic message
+            if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+                addSystemMessage('无法连接到服务器，请确认服务器正在运行', true);
+            } else if (msg.includes('HTTP 5')) {
+                addSystemMessage('服务器内部错误，请查看服务器日志', true);
+            } else if (msg.includes('HTTP 4')) {
+                addSystemMessage('请求错误 (' + msg + ')', true);
+            } else {
+                addSystemMessage(msg, true);
+            }
         } finally {
             hideTyping();
             state.isWaiting = false;
@@ -860,6 +919,11 @@
             body.provider = state.settings.provider;
             if (state.settings.model) body.model = state.settings.model;
             if (state.settings.base_url) body.base_url = state.settings.base_url;
+        }
+
+        // Always send personality preference
+        if (state.settings.personality) {
+            body.personality = state.settings.personality;
         }
 
         const resp = await fetch('/api/ai/chat', {
@@ -1503,6 +1567,7 @@
         localStorage.removeItem('chat_pinned');
         localStorage.removeItem('chat_auto_screenshot');
         localStorage.removeItem('chat_panel_width');
+        localStorage.removeItem('chat_default_open');
 
         // Reset current state
         state.messages = [];
@@ -1510,6 +1575,7 @@
         state.settings = defaultSettings();
         state.ttsEnabled = false;
         state.isPinned = false;
+        state.defaultOpen = true;
         state.autoScreenshot = false;
         _ttsEngine = 'edge';
 

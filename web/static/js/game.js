@@ -35,12 +35,14 @@
     let _inputPaused = false;       // Track: did WE pause for chat input?
 
     const GAME_ID = window.GAME_ID;
+    const GAME_NAME = window.GAME_NAME || GAME_ID;
     const BUNDLE_URL = `/api/games/${encodeURIComponent(GAME_ID)}/bundle`;
     const CACHE_NAME = 'dos-games-v1';
     const CACHE_DB = 'dos-games-cache';
     const STORE_BUNDLES = 'bundles';
     const STORE_HANDLES = 'file-handles';
     const STORE_SAVES = 'saves';
+    const SAVE_MARKER_KEY = 'saved_games_index';  // localStorage key for profile page
 
     const LOADING_HTML = `
         <div class="loading-spinner"></div>
@@ -400,6 +402,34 @@
     }
 
     // ═══════════════════════════════════════════════════════════════
+    //  Display scaling — scale game canvas on high-DPI / 4K displays
+    //  Baseline: 1920px-wide viewport (1080p) = scale 1.0
+    // ═══════════════════════════════════════════════════════════════
+
+    const BASELINE_WIDTH = 1920;
+    let _displayScale = 1.0;
+
+    function applyDisplayScale() {
+        const vw = window.innerWidth;
+        // Only scale up, never scale down below 1.0
+        _displayScale = Math.max(1.0, vw / BASELINE_WIDTH);
+        // Clamp to 2.5x max (4K at 150% scaling = 2560px → ~1.33x, 5K/ultrawide → higher)
+        _displayScale = Math.min(2.5, _displayScale);
+
+        const gamePage = document.querySelector('.game-page');
+        if (gamePage) {
+            gamePage.style.maxWidth = Math.round(1400 * _displayScale) + 'px';
+        }
+
+        console.log('[game.js] Display scale: ' + _displayScale.toFixed(2) +
+            ' (viewport: ' + vw + 'px, baseline: ' + BASELINE_WIDTH + 'px)');
+    }
+
+    // Run early, then again on resize
+    applyDisplayScale();
+    window.addEventListener('resize', applyDisplayScale);
+
+    // ═══════════════════════════════════════════════════════════════
     //  Startup
     // ═══════════════════════════════════════════════════════════════
 
@@ -580,11 +610,24 @@
             el.textContent = '💾 有存档 (' + kb + ' KB)';
             el.style.color = 'var(--success)';
             if (hint) hint.textContent = '✅ 下次打开此页面时自动加载存档';
+            markGameSaved(kb);
         } else {
             el.textContent = '📝 新游戏';
             el.style.color = 'var(--text-muted)';
             if (hint) hint.textContent = '在游戏中保存后，点击下方 💾 保存按钮';
         }
+    }
+
+    function markGameSaved(kbSize) {
+        try {
+            const index = JSON.parse(localStorage.getItem(SAVE_MARKER_KEY) || '{}');
+            index[GAME_ID] = {
+                name: GAME_NAME,
+                save_kb: kbSize || '?',
+                updated_at: Date.now(),
+            };
+            localStorage.setItem(SAVE_MARKER_KEY, JSON.stringify(index));
+        } catch (e) { /* ignore */ }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -693,6 +736,7 @@
                 console.log('[game.js] persist() returned:', changes ? changes.byteLength : 0, 'bytes');
                 if (changes && changes.byteLength > 0) {
                     ss.textContent = '已保存';
+                    markGameSaved((changes.byteLength / 1024).toFixed(0));
                     window.DOS.App.showToast('游戏进度已保存 ✅', 'success');
                 } else {
                     ss.textContent = '已同步';
