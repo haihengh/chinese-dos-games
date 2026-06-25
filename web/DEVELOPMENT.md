@@ -98,7 +98,12 @@ python app.py
     - Auto-migration from old `zh-HK` setting to `yue-Hant-HK`
   - Voice output (Edge TTS + browser fallback): Mandarin/Cantonese, male/female, adjustable rate
   - Differentiated network error messages (connection, HTTP 4xx, HTTP 5xx)
-  - localStorage persistence: history, AI config, personality, TTS prefs, pin state, panel width, `chat_default_open`
+  - localStorage persistence:
+    - Per-game: `chat_history_<GAME_ID>` — full conversation messages
+    - Global: `chat_ai_settings` (provider, key, model, personality, TTS, input lang),
+      `chat_tts_enabled`, `chat_tts_engine`, `chat_pinned`, `chat_default_open`,
+      `chat_auto_screenshot`, `chat_panel_width`
+    - API key stored client-side only — never persisted to any server
   - Document-level capture-phase `keydown` blocker (no emulator pause needed)
 
 ### Backend (`services/`)
@@ -165,6 +170,17 @@ Local flow:   dosCI.persist() → IndexedDB → auto-restore on refresh
 Cloud flow:   dosCI.persist() → IndexedDB → getSaveState() → base64 → POST /api/games/<id>/save
 Cloud load:   GET /api/games/<id>/save → putSaveState() → IndexedDB → restart game → js-dos restores
 ```
+
+### localStorage Keys Summary
+
+| Key | Purpose |
+|-----|---------|
+| `dos_save_mode` | Save location preference: `'local'` or `'cloud'` |
+| `saved_games_index` | Local save metadata for profile page (game name, size, timestamp) |
+| `dos_token` | JWT auth token for cloud saves |
+| `chat_history_<GAME_ID>` | AI conversation messages per game |
+| `chat_ai_settings` | AI provider, key, model, personality, TTS, input language |
+| `chat_*` | Various chat preferences (tts, pin, panel width, etc.) |
 
 ### Key Implementation Details
 

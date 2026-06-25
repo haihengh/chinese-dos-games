@@ -483,6 +483,26 @@ Wawa 支持两种个性预设，通过设置面板实时切换：
 
 两种个性均能分析游戏截屏中的文字、UI 和游戏状态，了解各种游戏类型的常见谜题和策略。
 
+### 数据存储 · Data Storage
+
+所有 AI 聊天数据存储在浏览器 **localStorage** 中，不经过任何服务器存储：
+
+All AI chat data is stored in browser **localStorage** — no server-side storage:
+
+| Key | 内容 · Content | 作用域· Scope |
+|-----|---------------|------|
+| `chat_history_<GAME_ID>` | 对话消息 · Chat messages | 每个游戏 · Per-game |
+| `chat_ai_settings` | API 密钥、模型、个性、TTS 等设置 | 全局 · Global |
+| `chat_tts_enabled` | TTS 开关 · TTS on/off | 全局 · Global |
+| `chat_tts_engine` | TTS 引擎 (edge/browser) | 全局 · Global |
+| `chat_pinned` | 面板固定 · Panel pinned | 全局 · Global |
+| `chat_default_open` | 首次自动展开 · Auto-open | 全局 · Global |
+| `chat_panel_width` | 面板宽度 · Panel width | 全局 · Global |
+
+> ⚠️ API 密钥存储在 `chat_ai_settings` 的 `api_key` 字段中，仅随每次 `/api/ai/chat` 请求发送，绝不存储在服务器上。
+>
+> ⚠️ The API key is stored in `chat_ai_settings.api_key` — only sent with `/api/ai/chat` requests, never stored on any server.
+
 ---
 
 ## 上传流程 · Upload Flow
