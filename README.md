@@ -8,6 +8,10 @@
 
 ## 新增功能 · Recent Updates
 
+✨ **Docker 完善 + Bug 修复** (2025-06-25)
+- 🐳 Docker 镜像重大修复：SSL 持久化证书、游戏封面、TTS 语音、自动下载镜像源
+- 🔧 5 个补丁版本 (v0.4.1–v0.4.5)，Docker 开箱即用
+
 ✨ **AI 个性 + 4K 适配 + 本地存档追踪** (2025-06-24)
 - 🎭 **AI 个性预设**: Wawa 两种回复风格 — 热情（默认）和简洁（无废话直答），设置面板可选
 - 🖥️ **4K 显示适配**: 游戏页面自动适配高分辨率/超宽屏，最大 2.5x 缩放
@@ -41,8 +45,9 @@
 ### Docker（推荐）
 ```bash
 docker run -d -p 5000:5000 -v dos-games-bin:/app/bin haihengh/chinese-dos-games:latest
-# 打开 https://localhost:5000，游戏自动按需下载
+# 打开 https://localhost:5000，首次访问接受自签名证书即可，游戏自动按需下载
 ```
+> 🔐 首次访问会提示证书警告，点击"高级 → 继续前往 localhost"即可。证书为持久化自签名证书（10 年有效期），之后不会再出现。
 
 ### 一键脚本
 - **Windows**: 双击 `start.bat`

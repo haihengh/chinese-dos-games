@@ -43,7 +43,15 @@ docker compose -f docker-compose.local-ai.yml up -d
 
 访问 · Visit: **https://localhost:5000**
 
-> 💡 Docker 镜像自动包含 1898 款游戏元数据。首次游玩某一游戏时自动下载（约 5-50MB），之后使用本地缓存。无需预先下载 35GB 游戏库。
+> 💡 Docker 镜像自动包含 1898 款游戏元数据和封面图片。首次游玩某一游戏时从 `dos-bin.zczc.cz` 自动下载（约 5-50MB），之后使用本地缓存。无需预先下载 35GB 游戏库。
+>
+> 🔊 TTS 语音播报使用 Microsoft Edge 神经网络语音（普通话/广东话、男/女声），内置 edge-tts 支持。
+
+> 🔐 **首次访问 SSL 证书**: 镜像内置了自签名 SSL 证书（10 年有效期）。首次打开 `https://localhost:5000` 时浏览器会提示证书不受信任 — 这是正常的。点击 **"高级" → "继续前往 localhost（不安全）"** 即可。证书是持久化的，之后不会再出现此提示。
+>
+> 🔐 **First-time SSL certificate**: The image includes a persistent self-signed SSL certificate (10-year validity). On first access, your browser will show a certificate warning — this is normal for self-signed certs. Click **"Advanced" → "Proceed to localhost (unsafe)"**. The cert persists across restarts, so you'll only need to do this once.
+>
+> ℹ️ HTTPS 是语音输入（麦克风）功能所必需的。没有 SSL 证书的 HTTP 连接仅在 `localhost` 上支持麦克风访问。
 
 ### 方式二：一键启动脚本
 
@@ -57,14 +65,21 @@ docker compose -f docker-compose.local-ai.yml up -d
 ```bash
 cd web
 pip install -r requirements.txt
-python app.py --ssl            # HTTPS (recommended)
+python app.py --ssl            # HTTPS (recommended, persistent cert)
 python app.py                  # HTTP (mic only on localhost)
 python app.py --ssl --port 8080  # Custom port
+
+# First time? Generate a persistent SSL cert (avoid adhoc certs that reset on restart):
+python generate_cert.py
 ```
 
 访问 · Visit: **https://localhost:5000** (or `http://localhost:5000` without `--ssl`)
 
-> 💡 **Mic input requires a secure context.** Without `--ssl`, only `http://localhost:5000` works for voice. With `--ssl`, `https://<any-host>:5000` works — accept the self-signed cert warning in your browser.
+> 💡 **Mic input requires a secure context.** Without `--ssl`, only `http://localhost:5000` works for voice. With `--ssl`, `https://<any-host>:5000` works.
+>
+> 🔐 **自签名证书**: 首次访问 `https://localhost:5000` 时浏览器会显示证书警告。点击 **"高级" → "继续前往 localhost"** 即可。建议先运行 `python generate_cert.py` 生成持久化证书（保存在 `certs/` 目录），否则每次重启都会生成新证书需要重新接受。Docker 镜像已在构建时自动生成持久化证书。
+>
+> 🔐 **Self-signed certificate**: Browsers will show a certificate warning on first access to `https://localhost:5000`. Click **"Advanced" → "Proceed to localhost"** to accept. Run `python generate_cert.py` first to create a persistent cert (stored in `certs/`); without it, Flask falls back to adhoc certs that regenerate on every restart. The Docker image includes a persistent cert generated at build time.
 
 ### 可选：中文字体 · Optional: Chinese Font
 

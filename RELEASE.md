@@ -127,7 +127,7 @@ chmod +x start.sh
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | No | — | AI chat (Claude) |
-| `GAME_DOWNLOAD_BASE` | No | GitHub raw | Game mirror URL (use ghproxy for China) |
+| `GAME_DOWNLOAD_BASE` | No | `https://dos-bin.zczc.cz/` | Game mirror URL (override for ghproxy/China or self-hosted CDN) |
 | `OLLAMA_BASE_URL` | No | — | Local Ollama server URL (e.g. `http://ollama:11434/v1`); enables offline AI mode |
 | `SECRET_KEY` | No | auto-gen | Flask session secret |
 | `PORT` | No | 5000 | Server port |
@@ -144,12 +144,12 @@ chmod +x start.sh
 
 ## China Mirror Setup
 
-Set `GAME_DOWNLOAD_BASE` to a China-accessible mirror:
+The default mirror (`https://dos-bin.zczc.cz/`) works internationally. For faster downloads inside China, set `GAME_DOWNLOAD_BASE`:
 
 ```bash
-# Option 1: GitHub proxy
-export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://raw.githubusercontent.com/haihengh/chinese-dos-games/refs/heads/master/bin/
+# Option 1: ghproxy (faster inside China)
+export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://dos-bin.zczc.cz/
 
-# Option 2: Self-hosted
+# Option 2: Self-hosted CDN
 export GAME_DOWNLOAD_BASE=https://my-cdn.example.com/games/
 ```

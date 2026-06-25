@@ -14,7 +14,7 @@ This guide covers development setup, architecture, and common tasks for contribu
 
 ```bash
 # Clone the repository
-git clone https://github.com/rwv/chinese-dos-games.git
+git clone https://github.com/haihengh/chinese-dos-games.git
 cd chinese-dos-games/web
 
 # Create virtual environment
@@ -458,14 +458,26 @@ def api_new():
 ```bash
 docker build -t chinese-dos-games:dev .
 docker run -p 5000:5000 chinese-dos-games:dev
+# First access: accept self-signed cert (Advanced → Proceed to localhost)
+# The cert is generated at build time and persists across restarts
 ```
+
+### Docker image contents
+The Docker image includes:
+- All web app code (`web/`), game metadata (`games.json`), and cover images (`img/`)
+- Python dependencies installed to `/install` with `PYTHONPATH=/install`
+- Persistent self-signed SSL cert in `/app/web/certs/` (10-year validity)
+- Game ZIPs are NOT included — fetched on demand from `dos-bin.zczc.cz` at runtime
+- Edge TTS (`edge-tts`) for neural Mandarin/Cantonese voice output
 
 ### Game-on-demand architecture
 ```
 User clicks game → GET /api/games/<id>/bundle
   → ZIP missing locally?
     → YES: download_service.py fetches from mirrors
-      → GitHub raw → ghproxy (China) → custom CDN
+      → Custom (GAME_DOWNLOAD_BASE env var, if set)
+      → dos-bin.zczc.cz (default, has all 1898 games)
+      → GitHub raw (fallback)
       → SHA256 verify → save to bin/
     → NO: use cached ZIP
   → bundle_service.py: wrap in .jsdos
@@ -480,10 +492,10 @@ User clicks game → GET /api/games/<id>/bundle
 5. See `RELEASE.md` for full details
 
 ### Adding a China mirror
-Set `GAME_DOWNLOAD_BASE` to a China-accessible URL when deploying for Chinese users:
+The default mirror (`dos-bin.zczc.cz`) works internationally. For faster downloads inside China, use ghproxy:
 ```bash
-# GitHub proxy
-export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://raw.githubusercontent.com/rwv/chinese-dos-games/refs/heads/master/bin/
+# GitHub proxy (faster inside China)
+export GAME_DOWNLOAD_BASE=https://ghproxy.net/https://dos-bin.zczc.cz/
 ```
 
 ## Performance Considerations

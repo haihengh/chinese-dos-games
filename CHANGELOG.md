@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] — 2025-06-25
+
+### Docker Fixes (v0.4.1 — v0.4.5)
+Critical fixes for the Docker deployment, rolled out across five patch releases.
+
+### Fixed
+- **TTS (v0.4.5)**: Added missing `edge-tts` dependency to `requirements.txt`. Previously the `/api/tts` endpoint returned 500 errors because the package wasn't installed, causing the browser to fall back to its robotic built-in TTS. Now uses Microsoft neural Edge TTS voices (Mandarin/Cantonese, male/female).
+- **Screenshot quality (v0.4.5)**: Canvas fallback method now uses JPEG 0.85 quality (was 0.6), matching the primary `ci.screenshot()` method. This was missed when quality was boosted earlier.
+- **Game download mirror (v0.4.4)**: Default mirror changed from GitHub raw (which has no game files) to `https://dos-bin.zczc.cz/` — the same source used by `download_data.py`. Games now auto-download on first play without any configuration. Mirror fallback order: `GAME_DOWNLOAD_BASE` env var → `dos-bin.zczc.cz` → GitHub raw.
+- **Cover images (v0.4.3)**: Added `COPY img/ /app/img/` to Dockerfile. Game cover images were not included in the Docker image — only `web/` and `games.json` were copied.
+- **Persistent SSL cert (v0.4.2)**: Self-signed certificate now generated at Docker build time via `generate_cert.py` (using `cryptography`). 10-year validity, covers localhost/127.0.0.1/::1. Previously Flask used adhoc certs that regenerated on every restart — users had to accept the browser warning each time. Now it's a one-time accept.
+- **pip install path (v0.4.1)**: Changed from `pip install --user` (packages under `/root/.local`, inaccessible to `dosgames` user because `/root` has 700 permissions) to `pip install --target=/install` with `PYTHONPATH=/install`. This caused `ModuleNotFoundError: No module named 'flask'` on container startup.
+
+### Added
+- `web/generate_cert.py` — self-signed cert generation script using `cryptography`
+
+### Changed
+- `Dockerfile`: multi-stage build with `--target=/install`, SSL cert generation, COPY img/
+- `requirements.txt`: added `edge-tts>=6.1`
+- `web/services/download_service.py`: default mirror → `dos-bin.zczc.cz`
+- `web/static/js/game.js`: canvas fallback JPEG quality 0.6 → 0.85
+
 ## [Unreleased] — 2025-06-24
 
 ### AI Personality Presets
