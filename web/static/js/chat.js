@@ -83,7 +83,10 @@
         try {
             const raw = localStorage.getItem(SETTINGS_KEY);
             if (raw) {
-                return Object.assign(defaultSettings(), JSON.parse(raw));
+                const settings = Object.assign(defaultSettings(), JSON.parse(raw));
+                // Migrate old zh-HK Cantonese code → yue-Hant-HK (better recognition)
+                if (settings.input_lang === 'zh-HK') settings.input_lang = 'yue-Hant-HK';
+                return settings;
             }
         } catch (e) { /* ignore */ }
         return defaultSettings();
@@ -248,7 +251,8 @@
                         <label class="chat-settings-label">识别语言</label>
                         <select class="chat-settings-select" id="settings-input-lang">
                             <option value="zh-CN">普通话 (Mandarin)</option>
-                            <option value="zh-HK">粵語 (Cantonese)</option>
+                            <option value="yue-Hant-HK">粵語 (Cantonese)</option>
+                            <option value="zh-HK">粵語 後備 (Cantonese fallback)</option>
                             <option value="zh-TW">台灣國語 (Taiwan)</option>
                             <option value="en-US">English</option>
                         </select>
