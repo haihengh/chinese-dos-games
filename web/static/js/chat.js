@@ -41,6 +41,7 @@
             personality: 'wawa',
             tts_voice: TTS_DEFAULT_VOICE,
             tts_rate: '+15%',
+            input_lang: 'zh-CN',
         };
     }
 
@@ -239,6 +240,17 @@
                             <option value="+0%" ${state.settings.tts_rate === '+0%' ? 'selected' : ''}>标准 +0%</option>
                             <option value="+15%" ${state.settings.tts_rate === '+15%' ? 'selected' : ''}>较快 +15%</option>
                             <option value="+30%" ${state.settings.tts_rate === '+30%' ? 'selected' : ''}>快速 +30%</option>
+                        </select>
+                    </div>
+                    <div class="chat-settings-divider"></div>
+                    <div class="chat-settings-section-label">🎤 语音输入</div>
+                    <div class="chat-settings-row">
+                        <label class="chat-settings-label">识别语言</label>
+                        <select class="chat-settings-select" id="settings-input-lang">
+                            <option value="zh-CN">普通话 (Mandarin)</option>
+                            <option value="zh-HK">粵語 (Cantonese)</option>
+                            <option value="zh-TW">台灣國語 (Taiwan)</option>
+                            <option value="en-US">English</option>
                         </select>
                     </div>
                 </div>
@@ -465,6 +477,10 @@
         if (ttsVoice) ttsVoice.value = state.settings.tts_voice || TTS_DEFAULT_VOICE;
         if (ttsRate) ttsRate.value = state.settings.tts_rate || '+15%';
 
+        // Voice input language
+        const inputLang = document.getElementById('settings-input-lang');
+        if (inputLang) inputLang.value = state.settings.input_lang || 'zh-CN';
+
         // Populate personality dropdown
         const personalitySelect = document.getElementById('settings-personality');
         if (personalitySelect) {
@@ -505,6 +521,7 @@
         state.settings.personality = document.getElementById('settings-personality').value;
         state.settings.tts_voice = document.getElementById('settings-tts-voice').value;
         state.settings.tts_rate = document.getElementById('settings-tts-rate').value;
+        state.settings.input_lang = document.getElementById('settings-input-lang').value;
 
         saveSettings();
         updateStatusIndicator();
@@ -1142,7 +1159,7 @@
         }
 
         state.recognition = new SpeechRecognition();
-        state.recognition.lang = 'zh-CN';
+        state.recognition.lang = state.settings.input_lang || 'zh-CN';
         state.recognition.continuous = false;
         state.recognition.interimResults = false;
         state.recognition.maxAlternatives = 1;

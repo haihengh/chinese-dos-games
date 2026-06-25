@@ -66,8 +66,13 @@
                 <button class="control-btn" id="btn-volume-down" title="减小音量">🔉</button>
                 <button class="control-btn" id="btn-volume-up" title="增加音量">🔊</button>
                 <span style="flex:1"></span>
-                <button class="control-btn save-btn" id="btn-save" title="保存进度到本地">💾 保存</button>
-                <button class="control-btn save-btn" id="btn-delete-save" title="删除本地存档">🗑️ 删档</button>
+                <select class="control-btn save-mode-select" id="save-mode" title="选择存档位置" style="font-size:0.85rem;">
+                    <option value="local">💻 本地</option>
+                    <option value="cloud">☁️ 云端</option>
+                </select>
+                <button class="control-btn save-btn" id="btn-save" title="保存进度">💾 保存</button>
+                <button class="control-btn save-btn" id="btn-load-cloud" title="从云端加载存档" style="display:none;">📥 加载</button>
+                <button class="control-btn save-btn" id="btn-delete-save" title="删除存档">🗑️ 删档</button>
                 <span id="save-status" style="font-size:0.8rem;color:var(--text-muted)"></span>
             </div>
         </div>

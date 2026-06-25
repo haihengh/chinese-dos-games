@@ -635,13 +635,54 @@
     // ═══════════════════════════════════════════════════════════════
 
     function setupControls() {
+        function updateSaveModeUI() {
+            const saveBtn = document.getElementById('btn-save');
+            const loadBtn = document.getElementById('btn-load-cloud');
+            const deleteBtn = document.getElementById('btn-delete-save');
+            const statusEl = document.getElementById('save-status');
+
+            if (_saveMode === 'cloud') {
+                saveBtn.title = '上传进度到云端';
+                saveBtn.textContent = '☁️ 上传';
+                loadBtn.style.display = '';
+                deleteBtn.title = '删除云端存档';
+                if (statusEl) statusEl.textContent = '';
+                checkCloudSave();
+            } else {
+                saveBtn.title = '保存进度到本地';
+                saveBtn.textContent = '💾 保存';
+                loadBtn.style.display = 'none';
+                deleteBtn.title = '删除本地存档';
+                checkLocalSave();
+            }
+        }
+
         document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
         document.getElementById('btn-pause').addEventListener('click', togglePause);
         document.getElementById('btn-restart').addEventListener('click', restartGame);
         document.getElementById('btn-volume-down').addEventListener('click', () => adjustVolume(-0.1));
         document.getElementById('btn-volume-up').addEventListener('click', () => adjustVolume(+0.1));
         document.getElementById('btn-save').addEventListener('click', saveGame);
+        document.getElementById('btn-load-cloud').addEventListener('click', loadFromCloud);
         document.getElementById('btn-delete-save').addEventListener('click', deleteSave);
+
+        // Save mode toggle
+        const modeSelect = document.getElementById('save-mode');
+        modeSelect.value = _saveMode;
+        updateSaveModeUI();
+        modeSelect.addEventListener('change', function() {
+            _saveMode = this.value;
+            localStorage.setItem('dos_save_mode', _saveMode);
+            updateSaveModeUI();
+            if (_saveMode === 'cloud' && !window.DOS.App.isLoggedIn()) {
+                window.DOS.App.showToast('云端存档需要登录账号', 'info');
+            }
+            if (_saveMode === 'cloud') {
+                checkCloudSave();
+            } else {
+                checkLocalSave();
+            }
+        });
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'F11' || (e.key === 'Enter' && e.altKey)) { e.preventDefault(); toggleFullscreen(); }
@@ -720,6 +761,10 @@
     //  Save / Delete / Restart
     // ═══════════════════════════════════════════════════════════════
 
+    let _saveMode = localStorage.getItem('dos_save_mode') || 'local';
+
+    function getSaveMode() { return _saveMode; }
+
     async function saveGame() {
         const ss = document.getElementById('save-status');
         if (!dosCI) {
@@ -727,8 +772,14 @@
             return;
         }
 
+        if (_saveMode === 'cloud') {
+            await saveToCloud();
+            return;
+        }
+
+        // ── Local save (default) ──
         ss.textContent = '保存中...';
-        console.log('[game.js] Saving game state...');
+        console.log('[game.js] Saving game state locally...');
 
         try {
             if (dosCI && typeof dosCI.persist === 'function') {
@@ -755,7 +806,141 @@
         checkLocalSave();
     }
 
+    async function saveToCloud() {
+        const ss = document.getElementById('save-status');
+        if (!window.DOS.App.isLoggedIn()) {
+            window.DOS.App.showToast('请先登录以使用云端存档', 'warning');
+            return;
+        }
+        ss.textContent = '上传中...';
+        console.log('[game.js] Uploading save to cloud...');
+        try {
+            // Persist locally first to get the save data
+            if (dosCI && typeof dosCI.persist === 'function') {
+                await dosCI.persist();
+            }
+            // Read the save data from IndexedDB and upload
+            const saveBytes = await getSaveState(GAME_ID);
+            if (!saveBytes || saveBytes.byteLength === 0) {
+                ss.textContent = '无存档数据';
+                window.DOS.App.showToast('暂无存档数据可上传', 'warning');
+                return;
+            }
+            const base64 = arrayBufferToBase64(saveBytes);
+            const resp = await fetch('/api/games/' + encodeURIComponent(GAME_ID) + '/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + window.DOS.App.getToken(),
+                },
+                body: JSON.stringify({ save_data: base64 }),
+            });
+            if (resp.ok) {
+                ss.textContent = '已上传 ☁️';
+                markGameSaved((saveBytes.byteLength / 1024).toFixed(0));
+                window.DOS.App.showToast('存档已上传到云端 ☁️', 'success');
+            } else {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || '上传失败 (' + resp.status + ')');
+            }
+        } catch (e) {
+            console.error('[game.js] Cloud save error:', e);
+            ss.textContent = '上传失败';
+            window.DOS.App.showToast('云端保存失败: ' + e.message, 'error');
+        }
+    }
+
+    async function loadFromCloud() {
+        const ss = document.getElementById('save-status');
+        if (!window.DOS.App.isLoggedIn()) {
+            window.DOS.App.showToast('请先登录以使用云端存档', 'warning');
+            return;
+        }
+        ss.textContent = '下载中...';
+        console.log('[game.js] Downloading save from cloud...');
+        try {
+            const resp = await fetch('/api/games/' + encodeURIComponent(GAME_ID) + '/save', {
+                headers: { 'Authorization': 'Bearer ' + window.DOS.App.getToken() },
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || '下载失败 (' + resp.status + ')');
+            }
+            const saveBytes = await resp.arrayBuffer();
+            if (saveBytes && saveBytes.byteLength > 0) {
+                // Write to IndexedDB so js-dos picks it up on next restart
+                await putSaveState(GAME_ID, saveBytes);
+                ss.textContent = '已下载 ☁️';
+                window.DOS.App.showToast('云端存档已下载，请重启游戏加载', 'success');
+                markGameSaved((saveBytes.byteLength / 1024).toFixed(0));
+            } else {
+                ss.textContent = '云端无存档';
+                window.DOS.App.showToast('云端暂无该游戏的存档', 'info');
+            }
+        } catch (e) {
+            console.error('[game.js] Cloud load error:', e);
+            ss.textContent = '下载失败';
+            window.DOS.App.showToast('云端加载失败: ' + e.message, 'error');
+        }
+    }
+
+    async function deleteCloudSave() {
+        if (!window.DOS.App.isLoggedIn()) {
+            window.DOS.App.showToast('请先登录', 'warning');
+            return;
+        }
+        const ss = document.getElementById('save-status');
+        ss.textContent = '删除中...';
+        try {
+            const resp = await fetch('/api/games/' + encodeURIComponent(GAME_ID) + '/save', {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + window.DOS.App.getToken() },
+            });
+            if (resp.ok) {
+                ss.textContent = '云端存档已删除';
+                window.DOS.App.showToast('云端存档已删除 ☁️', 'info');
+            } else {
+                throw new Error('删除失败 (' + resp.status + ')');
+            }
+        } catch (e) {
+            console.error('[game.js] Cloud delete error:', e);
+            ss.textContent = '删除失败';
+            window.DOS.App.showToast('云端删除失败: ' + e.message, 'error');
+        }
+    }
+
+    async function checkCloudSave() {
+        if (!window.DOS.App.isLoggedIn()) return;
+        try {
+            const resp = await fetch('/api/games/' + encodeURIComponent(GAME_ID) + '/save', {
+                headers: { 'Authorization': 'Bearer ' + window.DOS.App.getToken() },
+            });
+            if (resp.ok) {
+                const saveBytes = await resp.arrayBuffer();
+                if (saveBytes && saveBytes.byteLength > 0) {
+                    const el = document.getElementById('save-status');
+                    if (el) el.textContent = '☁️ 云端有存档 (' + (saveBytes.byteLength / 1024).toFixed(0) + ' KB)';
+                }
+            }
+        } catch (e) { /* ignore — user may not be logged in or server unreachable */ }
+    }
+
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+
     async function deleteSave() {
+        if (_saveMode === 'cloud') {
+            if (!confirm('确定要删除此游戏的云端存档吗？')) return;
+            await deleteCloudSave();
+            checkLocalSave();
+            return;
+        }
         if (!confirm('确定要删除此游戏的所有本地存档吗？')) return;
         document.getElementById('save-status').textContent = '删除中...';
         await deleteLocalSaves();

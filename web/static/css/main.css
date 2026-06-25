@@ -620,6 +620,19 @@ img {
     background: var(--primary);
     color: white;
 }
+.save-mode-select {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+.save-mode-select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
 
 /* ─── Game Sidebar ─── */
 .game-sidebar {
