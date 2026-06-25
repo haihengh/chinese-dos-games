@@ -888,7 +888,7 @@
             for (const canvas of canvases) {
                 try {
                     if (canvas.width < 16 || canvas.height < 16) continue;
-                    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
                     const base64 = dataUrl.split(',')[1];
                     if (base64 && base64.length > 500) {
                         // Check if this is likely a black/blank image
