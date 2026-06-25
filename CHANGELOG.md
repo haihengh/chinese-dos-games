@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased] — 2025-06-25
 
+### Fixed
+- **Cantonese voice input**: Changed language code from `zh-HK` to `yue-Hant-HK` — the explicit BCP 47 tag for Cantonese (Yue Chinese, Traditional Han, Hong Kong). `zh-HK` is ambiguous and many browsers treat it as Mandarin with HK accent. Auto-migrates existing users. Kept `zh-HK` as fallback option.
+
 ### Added
 - **Voice input language selector**: Chat settings now include a 🎤 语音输入 dropdown with 4 languages — 普通话 (zh-CN), 粵語 (zh-HK), 台灣國語 (zh-TW), English (en-US). Persisted to localStorage, used by `SpeechRecognition`.
 - **Cloud save toggle**: Game toolbar now has a 💻 本地 / ☁️ 云端 save mode selector:

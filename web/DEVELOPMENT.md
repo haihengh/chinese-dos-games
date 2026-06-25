@@ -92,7 +92,10 @@ python app.py
   - AI personality presets: warm (default) / concise, selectable in settings
   - Canvas screenshot via js-dos `ci.screenshot()` (WebGL-safe)
   - Game context injection (`window.GAME_META` → server)
-  - Voice input (Web Speech API) with selectable language: Mandarin, Cantonese, Taiwanese, English
+  - Voice input (Web Speech API) with 5 selectable languages:
+    - `zh-CN` Mandarin (default), `yue-Hant-HK` Cantonese, `zh-HK` Cantonese fallback, `zh-TW` Taiwanese, `en-US` English
+    - Note: `yue-Hant-HK` is the explicit BCP 47 tag for Cantonese; `zh-HK` is ambiguous (may be treated as Mandarin with HK accent)
+    - Auto-migration from old `zh-HK` setting to `yue-Hant-HK`
   - Voice output (Edge TTS + browser fallback): Mandarin/Cantonese, male/female, adjustable rate
   - Differentiated network error messages (connection, HTTP 4xx, HTTP 5xx)
   - localStorage persistence: history, AI config, personality, TTS prefs, pin state, panel width, `chat_default_open`

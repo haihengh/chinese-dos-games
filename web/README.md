@@ -402,7 +402,8 @@ The game page includes an AI chat companion **"Wawa"** that sees your game scree
 | 功能 · Feature | 说明 · Description |
 |---------------|-------------------|
 | 🖼️ **游戏截屏** | 使用 js-dos 原生 API (`ci.screenshot()`) 捕获 WebGL 画面，JPEG 85% 质量 · Native js-dos API for WebGL capture, JPEG 85% quality |
-| 🎤 **语音输入** | 浏览器语音识别，支持普通话/粵語/台灣國語/English 四种语言可选 · Browser speech recognition with 4 selectable languages |
+| 🎤 **语音输入** | 浏览器语音识别，5 种语言可选（普通话 / 粵語 yue-Hant-HK / 粵語 zh-HK / 台灣國語 / English）· Browser speech recognition with 5 language options |
+| ⚠️ **粵語限制** | Web Speech API 粵語支持取决于浏览器：Chrome/Edge 通常可用，Firefox/Safari 有限制 · Cantonese support varies by browser: Chrome/Edge usually OK, Firefox/Safari limited |
 | 🔊 **语音播报** | Edge TTS 神经网络语音 (普通话/广东话, 男/女声可选) + 浏览器 TTS 后备 · Neural Edge TTS (Mandarin/Cantonese, M/F voice) + browser fallback |
 | 📌 **面板固定** | 固定聊天面板，隐藏遮罩层，可边玩边看 AI 回复 · Pin panel to keep it open while playing the game |
 | 🏠 **本地 AI** | 内置 Ollama + Gemma 4 E4B 支持，完全离线运行，无需 API 密钥 · Built-in Ollama + Gemma 4 E4B, fully offline, no API key needed |
