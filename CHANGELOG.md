@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased] — 2025-06-25
 
+### Added
+- **Voice input language selector**: Chat settings now include a 🎤 语音输入 dropdown with 4 languages — 普通话 (zh-CN), 粵語 (zh-HK), 台灣國語 (zh-TW), English (en-US). Persisted to localStorage, used by `SpeechRecognition`.
+- **Cloud save toggle**: Game toolbar now has a 💻 本地 / ☁️ 云端 save mode selector:
+  - Local (default): `dosCI.persist()` → browser IndexedDB
+  - Cloud: Upload save to server via `POST /api/games/<id>/save` (requires login)
+  - Cloud load: Download save from server and write to IndexedDB for js-dos to restore
+  - Cloud delete: `DELETE /api/games/<id>/save`
+  - Mode persisted to `localStorage.dos_save_mode`
+  - Auto-checks for existing cloud save on game page load
+
+### Changed
+- `web/static/js/chat.js`: `recognition.lang` now reads from settings instead of hardcoded `zh-CN`
+- `web/static/js/game.js`: `saveGame()` dispatches to `saveToCloud()` when cloud mode active
+- `web/templates/game.html`: Added save mode `<select>`, cloud load button 📥, updated button labels
+- `web/static/css/main.css`: Added `.save-mode-select` styles
+
+### Docker Fixes (v0.4.1 — v0.4.5)
+
 ### Docker Fixes (v0.4.1 — v0.4.5)
 Critical fixes for the Docker deployment, rolled out across five patch releases.
 

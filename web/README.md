@@ -14,8 +14,8 @@ Play Chinese DOS games directly in your browser! Powered by [js-dos v8](https://
 | 📚 | **1898+ 款游戏** — 自动从 `games.json` 加载，首次游玩自动下载 | **1898+ Games** — Auto-loaded from `games.json`, auto-download on first play |
 | ☁️ | **按需下载** — 无需 35GB 全量下载，只下载你要玩的游戏并缓存 | **On-Demand** — No 35GB upfront download; fetch + cache individual games |
 | 👤 | **用户系统** — 注册/登录以管理游戏存档（可选） | **User System** — Register/login to manage game saves (optional) |
-| 💾 | **本地存档** — 游戏进度自动保存到浏览器 IndexedDB，刷新后自动恢复 | **Local Saves** — Game progress auto-saves to browser IndexedDB, auto-restored on refresh |
-| 📍 | **存档追踪** — 个人中心同时显示本地和服务器存档，统一存档概览 | **Save Tracking** — Profile page shows both local IndexedDB saves and server saves in one view |
+| 💾 | **双模存档** — 本地 IndexedDB (默认) 或云端服务器存档，一键切换 | **Dual Save Modes** — Local IndexedDB (default) or cloud server saves, toggle anytime |
+| ☁️ | **云端存档** — 登录后可将进度上传至服务器，跨设备同步 | **Cloud Saves** — Upload progress to server after login, sync across devices |
 | 🖥️ | **4K 显示屏适配** — 游戏页面在高分辨率/超宽屏上自动缩放，最高 2.5x | **4K Display Scaling** — Game page auto-scales on high-DPI/ultrawide displays, up to 2.5x |
 | 🎭 | **AI 个性预设** — Wawa 两种回复风格：热情（默认）和简洁（无废话直答） | **AI Personalities** — Two response styles: warm Wawa (default) and concise Wawa (no-fluff) |
 | 📤 | **上传游戏** — 拖拽上传自己的 DOS 游戏 ZIP 文件 | **Upload Games** — Drag-and-drop your own DOS game ZIP files |
@@ -338,8 +338,12 @@ js-dos automatically saves game state to the browser's IndexedDB, ensuring game 
   - Saves are entirely local to the browser, no login required
 - ✅ **页面刷新自动恢复 · Auto-Restore on Refresh**: 刷新页面时 js-dos 自动加载之前的存档
   - Page refresh automatically restores previous saves
-- ✅ **多设备独立 · Per-Device**: 每个浏览器/设备有独立的存档，不会同步
-  - Each browser/device has independent saves, no cloud sync
+- ✅ **双模存档 · Dual Save Modes**: 游戏控制栏提供 💻 本地 / ☁️ 云端切换
+  - Game toolbar has a 💻 Local / ☁️ Cloud toggle
+- ✅ **云端同步 · Cloud Sync** (需登录): 上传存档至服务器，可跨设备下载恢复
+  - (requires login): Upload saves to server, download on any device
+- ✅ **本地优先 · Local First**: 云端保存前先同步至 IndexedDB，确保本地有备份
+  - Cloud save syncs to IndexedDB first, ensuring a local backup
 
 ### 保存流程 · Save Flow
 
@@ -398,7 +402,7 @@ The game page includes an AI chat companion **"Wawa"** that sees your game scree
 | 功能 · Feature | 说明 · Description |
 |---------------|-------------------|
 | 🖼️ **游戏截屏** | 使用 js-dos 原生 API (`ci.screenshot()`) 捕获 WebGL 画面，JPEG 85% 质量 · Native js-dos API for WebGL capture, JPEG 85% quality |
-| 🎤 **语音输入** | 浏览器语音识别 (Web Speech API)，支持中文 · Browser speech recognition (Chinese) |
+| 🎤 **语音输入** | 浏览器语音识别，支持普通话/粵語/台灣國語/English 四种语言可选 · Browser speech recognition with 4 selectable languages |
 | 🔊 **语音播报** | Edge TTS 神经网络语音 (普通话/广东话, 男/女声可选) + 浏览器 TTS 后备 · Neural Edge TTS (Mandarin/Cantonese, M/F voice) + browser fallback |
 | 📌 **面板固定** | 固定聊天面板，隐藏遮罩层，可边玩边看 AI 回复 · Pin panel to keep it open while playing the game |
 | 🏠 **本地 AI** | 内置 Ollama + Gemma 4 E4B 支持，完全离线运行，无需 API 密钥 · Built-in Ollama + Gemma 4 E4B, fully offline, no API key needed |

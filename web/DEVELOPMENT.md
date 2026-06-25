@@ -56,7 +56,9 @@ python app.py
 
 - **`js/game.js`** — Main game player logic
   - Bundle preparation and caching
-  - Save/restore functionality (local IndexedDB + localStorage tracking)
+  - Dual save modes: local (IndexedDB via dosCI.persist) + cloud (server API, requires login)
+  - Save mode toggle persisted to localStorage.dos_save_mode
+  - Cloud save: upload base64-encoded save state, download and restore to IndexedDB
   - 4K / high-DPI display scaling (baseline 1920px, up to 2.5x)
   - Player control handlers
   - Uses js-dos v8 via CDN
@@ -90,8 +92,8 @@ python app.py
   - AI personality presets: warm (default) / concise, selectable in settings
   - Canvas screenshot via js-dos `ci.screenshot()` (WebGL-safe)
   - Game context injection (`window.GAME_META` → server)
-  - Voice input (Web Speech API), voice output (Edge TTS + browser fallback)
-  - TTS settings: Mandarin/Cantonese, male/female, adjustable rate
+  - Voice input (Web Speech API) with selectable language: Mandarin, Cantonese, Taiwanese, English
+  - Voice output (Edge TTS + browser fallback): Mandarin/Cantonese, male/female, adjustable rate
   - Differentiated network error messages (connection, HTTP 4xx, HTTP 5xx)
   - localStorage persistence: history, AI config, personality, TTS prefs, pin state, panel width, `chat_default_open`
   - Document-level capture-phase `keydown` blocker (no emulator pause needed)
@@ -146,11 +148,20 @@ python app.py
 
 ### How Saves Work
 
-The save system depends on **consistent Bundle URLs**:
+The save system has two modes, toggled via the 💻/☁️ selector in the game toolbar:
 
-1. **Consistent URL**: All games always load from `/api/games/{GAME_ID}/bundle`
-2. **js-dos Indexing**: js-dos uses the URL as a key to find saves in IndexedDB
-3. **Local Storage**: Saves are in browser IndexedDB, no server sync
+1. **Local** (default): js-dos `autoSave: true` → IndexedDB via `dosCI.persist()`. Save state keyed by consistent bundle URL.
+2. **Cloud** (requires login): Persist locally first, then upload base64-encoded save to server via `POST /api/games/<id>/save`. Download restores to IndexedDB for js-dos to load.
+
+Both modes use **consistent Bundle URLs**: All games always load from `/api/games/{GAME_ID}/bundle` so js-dos can find saves across sessions.
+
+### Save Architecture
+
+```
+Local flow:   dosCI.persist() → IndexedDB → auto-restore on refresh
+Cloud flow:   dosCI.persist() → IndexedDB → getSaveState() → base64 → POST /api/games/<id>/save
+Cloud load:   GET /api/games/<id>/save → putSaveState() → IndexedDB → restart game → js-dos restores
+```
 
 ### Key Implementation Details
 
