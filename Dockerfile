@@ -30,12 +30,17 @@ COPY --from=builder /install /install
 COPY web/ /app/web/
 COPY games.json /app/games.json
 
+# Generate persistent self-signed SSL certificate (10-year validity)
+RUN PYTHONPATH=/install python /app/web/generate_cert.py --output /app/web/certs
+
 # Game files fetched on demand at runtime — create empty dirs
 RUN mkdir -p /app/web/jsdos_cache /app/web/uploads_temp /app/bin /app/img \
     && chmod 777 /app/bin /app/img /app/web/jsdos_cache /app/web/uploads_temp
 
-# Security: drop root
-RUN useradd -m -s /bin/bash dosgames && chown -R dosgames:dosgames /app
+# Security: drop root — but keep cert readable
+RUN useradd -m -s /bin/bash dosgames \
+    && chown -R dosgames:dosgames /app \
+    && chmod 600 /app/web/certs/key.pem
 USER dosgames
 
 WORKDIR /app/web
