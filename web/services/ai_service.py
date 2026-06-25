@@ -105,7 +105,7 @@ def _resolve_config(api_key=None, base_url=None, model=None, provider=None):
     # ── Local AI (Ollama) auto-detection ──
     ollama_url = os.environ.get('OLLAMA_BASE_URL', '')
     local_ai_default = os.environ.get('LOCAL_AI_DEFAULT', '').lower() == 'true'
-    local_ai_model = os.environ.get('LOCAL_AI_MODEL', 'gemma4:e4b')
+    local_ai_model = os.environ.get('LOCAL_AI_MODEL', 'qwen3-vl:4b')
 
     # If no user key + no server key + ollama available → use local AI
     if not effective_key and ollama_url and local_ai_default:

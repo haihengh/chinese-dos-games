@@ -1,10 +1,11 @@
-# ─── Chinese DOS Games + Local AI (Ollama + Gemma 4 E4B) ───
+# ─── Chinese DOS Games + Local AI (Ollama + Qwen3-VL 4B) ───
 #   docker compose -f docker-compose.local-ai.yml up -d
 #   → No API key needed — AI runs entirely on your machine
 #
 # Requirements:
 #   - 8GB+ RAM (16GB recommended)
-#   - ~3GB disk for the Gemma model (downloaded on first start)
+#   - ~4GB disk for the Qwen3-VL model (downloaded on first start)
+#   - Qwen3-VL is vision-capable — better screenshot analysis than Gemma
 
 version: "3.8"
 
@@ -35,7 +36,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # ── Model puller: ensures Gemma is downloaded at startup ──
+  # ── Model puller: ensures Qwen3-VL is downloaded at startup ──
   ollama-pull:
     image: ollama/ollama:latest
     container_name: dos-games-ollama-pull
@@ -46,8 +47,8 @@ services:
       - |
         echo "Waiting for ollama..."
         sleep 5
-        echo "Pulling gemma4:e4b model (~3GB, one-time)..."
-        ollama pull gemma4:e4b
+        echo "Pulling qwen3-vl:4b model (~4GB, one-time)..."
+        ollama pull qwen3-vl:4b
         echo "Model ready!"
     environment:
       - OLLAMA_HOST=ollama:11434
@@ -75,7 +76,7 @@ services:
     environment:
       # ── Local AI (auto-detected, no API key needed) ──
       - OLLAMA_BASE_URL=http://ollama:11434/v1
-      - LOCAL_AI_MODEL=${LOCAL_AI_MODEL:-gemma4:e4b}
+      - LOCAL_AI_MODEL=${LOCAL_AI_MODEL:-qwen3-vl:4b}
       - LOCAL_AI_DEFAULT=${LOCAL_AI_DEFAULT:-true}
 
       # ── Cloud AI fallback (optional) ──

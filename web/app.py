@@ -429,7 +429,7 @@ def create_app():
         import os
         ollama_url = os.environ.get('OLLAMA_BASE_URL', '')
         local_ai_enabled = bool(ollama_url) and os.environ.get('LOCAL_AI_DEFAULT', '').lower() == 'true'
-        local_model = os.environ.get('LOCAL_AI_MODEL', 'gemma4:e4b')
+        local_model = os.environ.get('LOCAL_AI_MODEL', 'qwen3-vl:4b')
 
         return jsonify({
             'server_configured': bool(Config.ANTHROPIC_API_KEY),

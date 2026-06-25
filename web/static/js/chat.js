@@ -580,7 +580,7 @@
             if (hasUserConfig()) {
                 els.statusDot.title = '使用自定义 API 密钥';
             } else if (state.localAIDefault) {
-                els.statusDot.title = `本地 AI: ${state.localAIModel || 'gemma4:e4b'}`;
+                els.statusDot.title = `本地 AI: ${state.localAIModel || 'qwen3-vl:4b'}`;
             } else {
                 els.statusDot.title = '使用服务器 AI 配置';
             }
@@ -598,7 +598,7 @@
                 : '🔑 自定义 Anthropic 密钥';
             els.configHint.style.color = 'var(--success)';
         } else if (state.localAIDefault) {
-            els.configHint.textContent = '🏠 本地 AI (' + (state.localAIModel || 'gemma4:e4b') + ')';
+            els.configHint.textContent = '🏠 本地 AI (' + (state.localAIModel || 'qwen3-vl:4b') + ')';
             els.configHint.style.color = 'var(--success)';
         } else if (state.serverConfigured) {
             els.configHint.textContent = '🖥️ 使用服务器密钥';
@@ -1058,7 +1058,7 @@
                 ${state.localAIDefault ? `
                 <div class="chat-welcome-config-note" style="border-color:rgba(34,197,94,0.3);background:rgba(34,197,94,0.08);color:var(--success);">
                     🏠 本地 AI 已就绪<br>
-                    <small>使用 ${state.localAIModel || 'gemma4:e4b'} (Ollama)，完全离线运行</small>
+                    <small>使用 ${state.localAIModel || 'qwen3-vl:4b'} (Ollama)，完全离线运行</small>
                 </div>` : (!isAIAvailable() ? `
                 <div class="chat-welcome-config-note">
                     ⚠️ 尚未配置 AI 服务<br>

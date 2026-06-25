@@ -23,7 +23,7 @@
 - 💬 **聊天自动展开**: 首次访问自动打开聊天面板，用户可关闭并记住偏好
 
 ✨ **本地 AI + Docker 部署** (2025-06-24)
-- 🏠 内置 Ollama + Gemma 4 E4B 本地 AI，完全离线运行
+- 🏠 内置 Ollama + Qwen3-VL 4B 本地 AI，完全离线运行，视觉识别更强
 - 🐳 Docker 一键部署，支持云端/本地两种 AI 模式
 - ☁️ 游戏按需下载：首次游玩自动获取，无需 35GB 全量下载
 
@@ -47,10 +47,19 @@
 ## 快速开始 · Quick Start
 
 ### Docker（推荐）
+
+**云端 AI**（需 API 密钥）:
 ```bash
 docker run -d -p 5000:5000 -v dos-games-bin:/app/bin haihengh/chinese-dos-games:latest
-# 打开 https://localhost:5000，首次访问接受自签名证书即可，游戏自动按需下载
 ```
+
+**本地 AI**（无需 API 密钥，完全离线）:
+```bash
+docker compose -f docker-compose.local-ai.yml up -d
+# 首次启动自动下载 Qwen3-VL 4B (~4GB)，之后完全本地运行
+```
+
+> 🔐 首次访问会提示证书警告，点击"高级 → 继续前往 localhost"即可。证书为持久化自签名证书（10 年有效期），之后不会再出现。
 > 🔐 首次访问会提示证书警告，点击"高级 → 继续前往 localhost"即可。证书为持久化自签名证书（10 年有效期），之后不会再出现。
 
 ### 一键脚本

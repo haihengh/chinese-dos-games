@@ -38,7 +38,7 @@ docker run -d -p 5000:5000 -v dos-games-bin:/app/bin haihengh/chinese-dos-games:
 **本地 AI 版本**（无需 API 密钥，完全离线）:
 ```bash
 docker compose -f docker-compose.local-ai.yml up -d
-# 首次启动自动下载 Gemma 4 E4B 模型 (~3GB)，之后完全本地运行
+# 首次启动自动下载 Qwen3-VL 4B 模型 (~4GB)，之后完全本地运行
 ```
 
 访问 · Visit: **https://localhost:5000**
@@ -52,6 +52,71 @@ docker compose -f docker-compose.local-ai.yml up -d
 > 🔐 **First-time SSL certificate**: The image includes a persistent self-signed SSL certificate (10-year validity). On first access, your browser will show a certificate warning — this is normal for self-signed certs. Click **"Advanced" → "Proceed to localhost (unsafe)"**. The cert persists across restarts, so you'll only need to do this once.
 >
 > ℹ️ HTTPS 是语音输入（麦克风）功能所必需的。没有 SSL 证书的 HTTP 连接仅在 `localhost` 上支持麦克风访问。
+
+---
+
+### 🏠 本地 AI 详细说明 · Local AI Setup
+
+本地 AI 模式使用 [Ollama](https://ollama.com/) + **Qwen3-VL 4B**（通义千问视觉模型），完全在本地运行，无需网络连接或 API 密钥。
+
+The local AI mode uses Ollama + Qwen3-VL 4B — runs entirely on your machine, no internet or API key needed.
+
+**系统要求 · Requirements:**
+
+| 项目 · Item | 要求 · Requirement |
+|------------|-------------------|
+| 内存 · RAM | 8GB 最低，16GB+ 推荐 |
+| 磁盘 · Disk | ~4GB（模型下载，一次性）· ~4GB for model (one-time download) |
+| GPU（可选） | NVIDIA GPU 可大幅加速 · Optional for faster inference |
+
+**启动 · Start:**
+```bash
+# 一键启动（自动下载模型）
+docker compose -f docker-compose.local-ai.yml up -d
+
+# 查看启动日志（等待模型下载完成）
+docker logs dos-games-ollama-pull -f
+```
+
+**首次启动流程 · First Start:**
+```
+1. docker compose up → 启动 3 个容器 (ollama + puller + dos-games)
+2. ollama-pull 等待 ollama 就绪 → 自动下载 qwen3-vl:4b (~4GB)
+3. dos-games 检测到 OLLAMA_BASE_URL → 自动切换为本地 AI 模式
+4. 浏览器打开 https://localhost:5000 → 聊天面板显示 🏠 本地 AI
+```
+
+**验证 · Verify:**
+```bash
+# 检查模型是否下载完成
+docker exec dos-games-ollama ollama list
+
+# 查看 AI 服务状态
+curl -sk https://localhost:5000/api/ai/status
+```
+
+**GPU 加速 · GPU Acceleration:**
+```bash
+# NVIDIA GPU: 取消 docker-compose.local-ai.yml 中 deploy 部分的注释
+# Uncomment the deploy section in docker-compose.local-ai.yml for NVIDIA GPU
+```
+
+**切换模型 · Switch Model:**
+```bash
+# 拉取更强的模型
+docker exec dos-games-ollama ollama pull qwen3-vl:8b
+
+# 设置环境变量切换
+export LOCAL_AI_MODEL=qwen3-vl:8b
+docker compose -f docker-compose.local-ai.yml up -d
+```
+
+**停止 · Stop:**
+```bash
+docker compose -f docker-compose.local-ai.yml down
+# 模型数据保留在 ollama-models 卷中，下次启动无需重新下载
+# Model persists in ollama-models volume — no re-download on restart
+```
 
 ### 方式二：一键启动脚本
 
@@ -406,7 +471,7 @@ The game page includes an AI chat companion **"Wawa"** that sees your game scree
 | ⚠️ **粵語限制** | Web Speech API 粵語支持取决于浏览器：Chrome/Edge 通常可用，Firefox/Safari 有限制 · Cantonese support varies by browser: Chrome/Edge usually OK, Firefox/Safari limited |
 | 🔊 **语音播报** | Edge TTS 神经网络语音 (普通话/广东话, 男/女声可选) + 浏览器 TTS 后备 · Neural Edge TTS (Mandarin/Cantonese, M/F voice) + browser fallback |
 | 📌 **面板固定** | 固定聊天面板，隐藏遮罩层，可边玩边看 AI 回复 · Pin panel to keep it open while playing the game |
-| 🏠 **本地 AI** | 内置 Ollama + Gemma 4 E4B 支持，完全离线运行，无需 API 密钥 · Built-in Ollama + Gemma 4 E4B, fully offline, no API key needed |
+| 🏠 **本地 AI** | 内置 Ollama + Qwen3-VL 4B，完全离线运行，视觉识别更强 · Built-in Ollama + Qwen3-VL 4B, fully offline, better vision |
 | ⚙️ **自定义 AI** | 也支持 Anthropic / OpenAI / DeepSeek 云 API · Also supports cloud APIs (Anthropic, OpenAI, DeepSeek) |
 | 🖥️ **页面不遮挡** | 打开聊天面板时整个页面向右平移，游戏画面不被遮挡 · Page shifts right when chat opens, game stays fully visible |
 | 🎭 **个性预设** | 两种回复风格可选 — Wawa 热情（默认，活泼鼓励） / Wawa 简洁（1-3句，直接给答案） · Two personalities: warm (default, enthusiastic) / concise (1-3 sentences, direct) |
