@@ -29,6 +29,7 @@ COPY --from=builder /install /install
 # Copy app code
 COPY web/ /app/web/
 COPY games.json /app/games.json
+COPY img/ /app/img/
 
 # Generate persistent self-signed SSL certificate (10-year validity)
 RUN PYTHONPATH=/install python /app/web/generate_cert.py --output /app/web/certs
